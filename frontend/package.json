@@ -1,0 +1,17 @@
+{
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "dev": "vite --host 0.0.0.0"
+  },
+  "dependencies": {
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}

@@ -1,11 +1,22 @@
 ARG BASE_IMAGE=alpine:3.20
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:22-alpine
+
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS frontend-builder
+
+WORKDIR /src/frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend ./
+RUN npm run build
+
 FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS server-builder
 
 WORKDIR /src
 
 COPY go.mod ./
 COPY cmd ./cmd
-COPY templates ./templates
 
 ARG TARGETOS=linux
 ARG TARGETARCH
@@ -49,7 +60,7 @@ RUN set -eux; \
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --from=server-builder /out/k8s-tool-server /usr/local/bin/k8s-tool-server
-COPY templates /usr/local/share/k8s-tool/templates
+COPY --from=frontend-builder /src/frontend/dist /usr/local/share/k8s-tool/frontend
 
 RUN chmod +x /usr/local/bin/entrypoint.sh \
     && chmod +x /usr/local/bin/k8s-tool-server \

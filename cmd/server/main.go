@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -149,7 +148,6 @@ type server struct {
 	token           string
 	httpClient      *http.Client
 	kubeClient      *http.Client
-	template        *template.Template
 	mu              sync.RWMutex
 	agents          []AgentInfo
 	lastError       string
@@ -174,10 +172,10 @@ func main() {
 	go srv.refreshLoop(ctx)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", srv.handleIndex)
 	mux.HandleFunc("/api/agents", srv.handleAgents)
 	mux.HandleFunc("/api/refresh", srv.handleRefresh)
 	mux.HandleFunc("/api/network-check", srv.handleNetworkCheck)
+	mux.HandleFunc("/", handleFrontend)
 
 	addr := ":80"
 	log.Printf("k8s-tool-server listening on %s namespace=%s selector=%q agentPort=%d refresh=%s", addr, srv.namespace, srv.agentSelector, srv.agentPort, srv.refreshInterval)
@@ -210,11 +208,6 @@ func newServer() (*server, error) {
 		}
 	}
 
-	tmpl, err := loadTemplate()
-	if err != nil {
-		return nil, err
-	}
-
 	return &server{
 		namespace:       namespace,
 		agentSelector:   env("AGENT_SELECTOR", "app.kubernetes.io/name=k8s-tool,app.kubernetes.io/component=agent"),
@@ -224,26 +217,9 @@ func newServer() (*server, error) {
 		token:           strings.TrimSpace(string(tokenBytes)),
 		httpClient:      &http.Client{Timeout: 3 * time.Second},
 		kubeClient:      kubeClient,
-		template:        tmpl,
 		agents:          []AgentInfo{},
 		network:         NetworkCheckSummary{Results: []NetworkCheckResult{}},
 	}, nil
-}
-
-func loadTemplate() (*template.Template, error) {
-	paths := []string{
-		"/usr/local/share/k8s-tool/templates/server/index.html",
-		filepath.Join("templates", "server", "index.html"),
-	}
-	var lastErr error
-	for _, path := range paths {
-		tmpl, err := template.New("index.html").ParseFiles(path)
-		if err == nil {
-			return tmpl, nil
-		}
-		lastErr = err
-	}
-	return nil, fmt.Errorf("load server template failed: %w", lastErr)
 }
 
 func (s *server) refreshLoop(ctx context.Context) {
@@ -743,35 +719,6 @@ func (s *server) setNetworkSummary(summary NetworkCheckSummary) {
 	s.mu.Unlock()
 }
 
-func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	s.mu.RLock()
-	data := struct {
-		Agents          []AgentInfo
-		LastError       string
-		RefreshInterval int
-		GeneratedAt     string
-		Network         NetworkCheckSummary
-		NetworkView     NetworkView
-	}{
-		Agents:          cloneAgents(s.agents),
-		LastError:       s.lastError,
-		RefreshInterval: int(s.refreshInterval.Seconds()),
-		GeneratedAt:     time.Now().Format(time.RFC3339),
-		Network:         cloneNetworkSummary(s.network),
-	}
-	data.NetworkView = buildNetworkView(data.Network)
-	s.mu.RUnlock()
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.template.ExecuteTemplate(w, "index.html", data); err != nil {
-		log.Printf("render index failed: %v", err)
-	}
-}
-
 func (s *server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -803,6 +750,34 @@ func (s *server) handleNetworkCheck(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func handleFrontend(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	root := frontendRoot()
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	if path == "" {
+		path = "index.html"
+	}
+	fullPath := root + "/" + path
+	if _, err := os.Stat(fullPath); err != nil {
+		fullPath = root + "/index.html"
+	}
+	http.ServeFile(w, r, fullPath)
+}
+
+func frontendRoot() string {
+	if root := strings.TrimSpace(os.Getenv("FRONTEND_DIR")); root != "" {
+		return root
+	}
+	if _, err := os.Stat("/usr/local/share/k8s-tool/frontend/index.html"); err == nil {
+		return "/usr/local/share/k8s-tool/frontend"
+	}
+	return "frontend/dist"
 }
 
 func (s *server) writeAgents(w http.ResponseWriter) {

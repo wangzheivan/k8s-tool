@@ -1,0 +1,186 @@
+:root {
+  color-scheme: light dark;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f6f8fb;
+  color: #17202a;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  padding: 24px;
+}
+
+header,
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  letter-spacing: 0;
+}
+
+h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.meta {
+  color: #52606d;
+  font-size: 14px;
+}
+
+button {
+  border: 1px solid #8aa4c2;
+  background: #ffffff;
+  color: #17202a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+section {
+  margin-top: 24px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.stat {
+  background: #ffffff;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.stat .label {
+  color: #52606d;
+  font-size: 13px;
+}
+
+.stat .value {
+  font-size: 22px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+  border: 1px solid #d9e2ec;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid #d9e2ec;
+  font-size: 14px;
+  vertical-align: top;
+}
+
+th {
+  background: #eef3f8;
+  font-weight: 700;
+}
+
+.status {
+  font-weight: 700;
+}
+
+.online,
+.ok {
+  color: #16794c;
+}
+
+.pod-not-running,
+.missing-pod-ip,
+.connect-error,
+.http-error,
+.invalid-json,
+.failed {
+  color: #b42318;
+}
+
+.empty,
+.alert {
+  border: 1px solid #d9e2ec;
+  background: #ffffff;
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.alert {
+  border-color: #f4b6b0;
+  color: #9f1d14;
+  margin-bottom: 14px;
+}
+
+details {
+  margin-top: 6px;
+}
+
+summary {
+  cursor: pointer;
+  color: #3b668f;
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 8px 0 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    background: #121820;
+    color: #eef2f6;
+  }
+
+  table,
+  .empty,
+  .alert,
+  button,
+  .stat {
+    background: #1c2633;
+    border-color: #34445a;
+    color: #eef2f6;
+  }
+
+  th {
+    background: #263446;
+  }
+
+  td,
+  th {
+    border-color: #34445a;
+  }
+
+  .meta,
+  .stat .label {
+    color: #b7c4d3;
+  }
+
+  summary {
+    color: #a7c7e8;
+  }
+}

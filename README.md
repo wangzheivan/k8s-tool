@@ -8,7 +8,7 @@
 默认镜像地址：
 
 ```text
-harbor.rancherlsp.com/ivan/k8s-tool:v3.1
+harbor.rancherlsp.com/ivan/k8s-tool:v4.0
 ```
 
 ## 功能
@@ -27,6 +27,7 @@ harbor.rancherlsp.com/ivan/k8s-tool:v3.1
 - Deployment 部署。
 - 通过 Kubernetes API 发现同 namespace 下的 agent Pod。
 - 每 10 秒后台刷新 agent 基础状态。
+- 使用 React + Vite + TypeScript SPA 展示 UI，Go 后端继续提供 API 和静态资源托管。
 - UI 显示所有发现到的 agent，包括非 Running、无 Pod IP、连接失败、HTTP 错误和 JSON 错误。
 - 手动触发 Network Diagnostics，执行全量 agent 到 agent 的 Pod 网络矩阵检查。
 - Network Diagnostics 默认展示 Summary、By Source 聚合和 Failures 失败明细，完整 N×N 结果保留在 API 中。
@@ -36,6 +37,14 @@ harbor.rancherlsp.com/ivan/k8s-tool:v3.1
 ```bash
 ./scripts/preflight.sh
 ./scripts/build-image.sh
+```
+
+如果只验证前端：
+
+```bash
+cd frontend
+npm ci
+npm run build
 ```
 
 推送到 Harbor：

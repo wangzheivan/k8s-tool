@@ -4,3 +4,5 @@
 *.md
 k8s
 scripts
+frontend/node_modules
+frontend/dist
