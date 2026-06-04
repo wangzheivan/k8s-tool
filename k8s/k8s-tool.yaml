@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-tool
+  labels:
+    app.kubernetes.io/name: k8s-tool
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-tool-readonly
+  labels:
+    app.kubernetes.io/name: k8s-tool
+rules:
+  - apiGroups: [""]
+    resources:
+      - endpoints
+      - nodes
+      - pods
+      - services
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-tool-readonly
+  labels:
+    app.kubernetes.io/name: k8s-tool
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-tool-readonly
+subjects:
+  - kind: ServiceAccount
+    name: k8s-tool
+    namespace: default
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-tool-agent
+  labels:
+    app.kubernetes.io/name: k8s-tool
+    app.kubernetes.io/component: agent
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: k8s-tool
+    app.kubernetes.io/component: agent
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-tool-server
+  labels:
+    app.kubernetes.io/name: k8s-tool
+    app.kubernetes.io/component: server
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: k8s-tool
+    app.kubernetes.io/component: server
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: k8s-tool-agent
+  labels:
+    app.kubernetes.io/name: k8s-tool
+    app.kubernetes.io/component: agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: k8s-tool
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: k8s-tool
+        app.kubernetes.io/component: agent
+    spec:
+      serviceAccountName: k8s-tool
+      containers:
+        - name: k8s-tool-agent
+          image: harbor.rancherlsp.com/ivan/k8s-tool:v0.2.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: MODE
+              value: agent
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: REFRESH_INTERVAL_SECONDS
+              value: "10"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-tool-server
+  labels:
+    app.kubernetes.io/name: k8s-tool
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: k8s-tool
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: k8s-tool
+        app.kubernetes.io/component: server
+    spec:
+      serviceAccountName: k8s-tool
+      containers:
+        - name: k8s-tool-server
+          image: harbor.rancherlsp.com/ivan/k8s-tool:v0.2.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: MODE
+              value: server
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: REFRESH_INTERVAL_SECONDS
+              value: "10"
+            - name: AGENT_SELECTOR
+              value: app.kubernetes.io/name=k8s-tool,app.kubernetes.io/component=agent
+            - name: AGENT_PORT
+              value: "80"

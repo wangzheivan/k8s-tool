@@ -1,0 +1,6 @@
+.git
+.agents
+.codex
+*.md
+k8s
+scripts

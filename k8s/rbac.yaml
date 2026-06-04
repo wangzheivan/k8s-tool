@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-tool
+  labels:
+    app.kubernetes.io/name: k8s-tool
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-tool-readonly
+  labels:
+    app.kubernetes.io/name: k8s-tool
+rules:
+  - apiGroups: [""]
+    resources:
+      - endpoints
+      - nodes
+      - pods
+      - services
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-tool-readonly
+  labels:
+    app.kubernetes.io/name: k8s-tool
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-tool-readonly
+subjects:
+  - kind: ServiceAccount
+    name: k8s-tool
+    namespace: default
