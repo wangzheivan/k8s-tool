@@ -14,6 +14,10 @@
     .meta { color: #52606d; font-size: 14px; }
     button { border: 1px solid #8aa4c2; background: #ffffff; color: #17202a; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
     section { margin-top: 24px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .stat { background: #ffffff; border: 1px solid #d9e2ec; border-radius: 8px; padding: 12px; }
+    .stat .label { color: #52606d; font-size: 13px; }
+    .stat .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
     table { width: 100%; border-collapse: collapse; background: #ffffff; border: 1px solid #d9e2ec; }
     th, td { text-align: left; padding: 10px; border-bottom: 1px solid #d9e2ec; font-size: 14px; vertical-align: top; }
     th { background: #eef3f8; font-weight: 700; }
@@ -28,10 +32,10 @@
     pre { white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }
     @media (prefers-color-scheme: dark) {
       :root { background: #121820; color: #eef2f6; }
-      table, .empty, .alert, button { background: #1c2633; border-color: #34445a; color: #eef2f6; }
+      table, .empty, .alert, button, .stat { background: #1c2633; border-color: #34445a; color: #eef2f6; }
       th { background: #263446; }
       td, th { border-color: #34445a; }
-      .meta { color: #b7c4d3; }
+      .meta, .stat .label { color: #b7c4d3; }
       summary { color: #a7c7e8; }
     }
   </style>
@@ -109,6 +113,69 @@ error: {{.Error}}</pre>
     </div>
     {{if .Network.Error}}<div class="alert">{{.Network.Error}}</div>{{end}}
     {{if .Network.Results}}
+    <div class="stats">
+      <div class="stat"><div class="label">Agents</div><div class="value">{{.NetworkView.Stats.AgentCount}}</div></div>
+      <div class="stat"><div class="label">Checks</div><div class="value">{{.NetworkView.Stats.TotalChecks}}</div></div>
+      <div class="stat"><div class="label">Success</div><div class="value ok">{{.NetworkView.Stats.SuccessCount}}</div></div>
+      <div class="stat"><div class="label">Failed</div><div class="value failed">{{.NetworkView.Stats.FailedCount}}</div></div>
+      <div class="stat"><div class="label">Skipped</div><div class="value">{{.NetworkView.Stats.SkippedCount}}</div></div>
+      <div class="stat"><div class="label">Ping Failed</div><div class="value failed">{{.NetworkView.Stats.PingFailed}}</div></div>
+      <div class="stat"><div class="label">HTTP Failed</div><div class="value failed">{{.NetworkView.Stats.HTTPFailed}}</div></div>
+    </div>
+
+    <h3>By Source</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Source Pod</th>
+          <th>Targets</th>
+          <th>Success</th>
+          <th>Failed</th>
+          <th>Skipped</th>
+          <th>Ping OK</th>
+          <th>HTTP OK</th>
+          <th>Failure Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .NetworkView.Sources}}
+        <tr>
+          <td>{{.SourcePod}}</td>
+          <td>{{.TargetCount}}</td>
+          <td class="ok">{{.SuccessCount}}</td>
+          <td class="{{if .FailedCount}}failed{{end}}">{{.FailedCount}}</td>
+          <td>{{.SkippedCount}}</td>
+          <td>{{.PingOKCount}}</td>
+          <td>{{.HTTPOKCount}}</td>
+          <td>
+            {{if .Failures}}
+            <details>
+              <summary>{{.FailedCount}} failed targets</summary>
+              <table>
+                <thead><tr><th>Target</th><th>Ping</th><th>HTTP</th><th>Reason</th></tr></thead>
+                <tbody>
+                  {{range .Failures}}
+                  <tr>
+                    <td>{{.TargetPod}}<br><span class="meta">{{.TargetIP}} {{.TargetNode}}</span></td>
+                    <td class="{{if .PingOK}}ok{{else}}failed{{end}}">{{if .Skipped}}skipped{{else}}{{if .PingOK}}ok{{else}}failed{{end}} {{.PingDurationMS}}ms{{end}}</td>
+                    <td class="{{if .HTTPOK}}ok{{else}}failed{{end}}">{{if .Skipped}}skipped{{else}}{{if .HTTPOK}}ok{{else}}failed{{end}} status={{.HTTPStatus}} {{.HTTPDurationMS}}ms{{end}}</td>
+                    <td><pre>{{.PingError}}{{.HTTPError}}{{.SkipReason}}</pre></td>
+                  </tr>
+                  {{end}}
+                </tbody>
+              </table>
+            </details>
+            {{else}}
+            <span class="ok">all targets ok</span>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+
+    <h3>Failures</h3>
+    {{if .NetworkView.Failures}}
     <table>
       <thead>
         <tr>
@@ -121,7 +188,7 @@ error: {{.Error}}</pre>
         </tr>
       </thead>
       <tbody>
-        {{range .Network.Results}}
+        {{range .NetworkView.Failures}}
         <tr>
           <td>{{.SourcePod}}</td>
           <td>{{.TargetPod}}<br><span class="meta">{{.TargetNode}}</span></td>
@@ -137,6 +204,9 @@ error: {{.Error}}</pre>
         {{end}}
       </tbody>
     </table>
+    {{else}}
+    <div class="empty">No network failures detected.</div>
+    {{end}}
     {{else}}
     <div class="empty">No network check has been run.</div>
     {{end}}

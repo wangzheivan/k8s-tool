@@ -88,6 +88,33 @@ type NetworkCheckSummary struct {
 	SourceErrors []string             `json:"sourceErrors,omitempty"`
 }
 
+type NetworkStats struct {
+	AgentCount   int `json:"agentCount"`
+	TotalChecks  int `json:"totalChecks"`
+	SuccessCount int `json:"successCount"`
+	FailedCount  int `json:"failedCount"`
+	SkippedCount int `json:"skippedCount"`
+	PingFailed   int `json:"pingFailed"`
+	HTTPFailed   int `json:"httpFailed"`
+}
+
+type NetworkSourceSummary struct {
+	SourcePod    string               `json:"sourcePod"`
+	TargetCount  int                  `json:"targetCount"`
+	SuccessCount int                  `json:"successCount"`
+	FailedCount  int                  `json:"failedCount"`
+	SkippedCount int                  `json:"skippedCount"`
+	PingOKCount  int                  `json:"pingOKCount"`
+	HTTPOKCount  int                  `json:"httpOKCount"`
+	Failures     []NetworkCheckResult `json:"failures"`
+}
+
+type NetworkView struct {
+	Stats    NetworkStats           `json:"stats"`
+	Sources  []NetworkSourceSummary `json:"sources"`
+	Failures []NetworkCheckResult   `json:"failures"`
+}
+
 type podList struct {
 	Items []pod `json:"items"`
 }
@@ -728,6 +755,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		RefreshInterval int
 		GeneratedAt     string
 		Network         NetworkCheckSummary
+		NetworkView     NetworkView
 	}{
 		Agents:          cloneAgents(s.agents),
 		LastError:       s.lastError,
@@ -735,6 +763,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		GeneratedAt:     time.Now().Format(time.RFC3339),
 		Network:         cloneNetworkSummary(s.network),
 	}
+	data.NetworkView = buildNetworkView(data.Network)
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -814,6 +843,66 @@ func cloneNetworkSummary(summary NetworkCheckSummary) NetworkCheckSummary {
 		summary.Results = []NetworkCheckResult{}
 	}
 	return summary
+}
+
+func buildNetworkView(summary NetworkCheckSummary) NetworkView {
+	view := NetworkView{
+		Stats: NetworkStats{
+			AgentCount:  summary.AgentCount,
+			TotalChecks: len(summary.Results),
+		},
+		Sources:  []NetworkSourceSummary{},
+		Failures: []NetworkCheckResult{},
+	}
+
+	bySource := map[string]*NetworkSourceSummary{}
+	sourceOrder := []string{}
+	for _, result := range summary.Results {
+		source := result.SourcePod
+		if source == "" {
+			source = "unknown"
+		}
+		if _, ok := bySource[source]; !ok {
+			sourceOrder = append(sourceOrder, source)
+			bySource[source] = &NetworkSourceSummary{SourcePod: source, Failures: []NetworkCheckResult{}}
+		}
+		row := bySource[source]
+		row.TargetCount++
+		if result.Skipped {
+			row.SkippedCount++
+			view.Stats.SkippedCount++
+		}
+		if result.PingOK {
+			row.PingOKCount++
+		}
+		if result.HTTPOK {
+			row.HTTPOKCount++
+		}
+		if networkResultOK(result) {
+			row.SuccessCount++
+			view.Stats.SuccessCount++
+			continue
+		}
+		row.FailedCount++
+		row.Failures = append(row.Failures, result)
+		view.Failures = append(view.Failures, result)
+		view.Stats.FailedCount++
+		if !result.Skipped && !result.PingOK {
+			view.Stats.PingFailed++
+		}
+		if !result.Skipped && !result.HTTPOK {
+			view.Stats.HTTPFailed++
+		}
+	}
+
+	for _, source := range sourceOrder {
+		view.Sources = append(view.Sources, *bySource[source])
+	}
+	return view
+}
+
+func networkResultOK(result NetworkCheckResult) bool {
+	return !result.Skipped && result.PingOK && result.HTTPOK
 }
 
 func kbToGiB(kb int64) string {

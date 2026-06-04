@@ -8,7 +8,7 @@
 默认镜像地址：
 
 ```text
-harbor.rancherlsp.com/ivan/k8s-tool:v3.0
+harbor.rancherlsp.com/ivan/k8s-tool:v3.1
 ```
 
 ## 功能
@@ -29,6 +29,7 @@ harbor.rancherlsp.com/ivan/k8s-tool:v3.0
 - 每 10 秒后台刷新 agent 基础状态。
 - UI 显示所有发现到的 agent，包括非 Running、无 Pod IP、连接失败、HTTP 错误和 JSON 错误。
 - 手动触发 Network Diagnostics，执行全量 agent 到 agent 的 Pod 网络矩阵检查。
+- Network Diagnostics 默认展示 Summary、By Source 聚合和 Failures 失败明细，完整 N×N 结果保留在 API 中。
 
 ## 构建和推送
 
