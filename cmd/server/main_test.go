@@ -42,3 +42,26 @@ func TestBuildNetworkViewAggregatesResults(t *testing.T) {
 		t.Fatalf("len(Failures) = %d, want 2", len(view.Failures))
 	}
 }
+
+func TestBuildNetworkViewTreatsPingOnlyLayersAsSuccess(t *testing.T) {
+	summary := NetworkCheckSummary{
+		AgentCount: 2,
+		Results: []NetworkCheckResult{
+			{Layer: "node-to-node", SourcePod: "agent-a", TargetName: "node-a", PingOK: true},
+			{Layer: "pod-to-node", SourcePod: "agent-a", TargetName: "node-b", PingOK: true},
+			{Layer: "node-to-pod", SourcePod: "agent-a", TargetName: "agent-b", PingOK: true, HTTPOK: false, HTTPError: "timeout"},
+		},
+	}
+
+	view := buildNetworkView(summary)
+
+	if view.Stats.SuccessCount != 2 {
+		t.Fatalf("SuccessCount = %d, want 2", view.Stats.SuccessCount)
+	}
+	if view.Stats.FailedCount != 1 {
+		t.Fatalf("FailedCount = %d, want 1", view.Stats.FailedCount)
+	}
+	if view.Stats.HTTPFailed != 1 {
+		t.Fatalf("HTTPFailed = %d, want 1", view.Stats.HTTPFailed)
+	}
+}

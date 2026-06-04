@@ -46,10 +46,27 @@ type NetworkTarget struct {
 	PodName  string `json:"podName"`
 	PodIP    string `json:"podIP"`
 	NodeName string `json:"nodeName"`
+	NodeIP   string `json:"nodeIP,omitempty"`
 }
 
 type NetworkCheckRequest struct {
 	Targets []NetworkTarget `json:"targets"`
+}
+
+type LayeredNetworkTarget struct {
+	Name     string `json:"name"`
+	PodName  string `json:"podName,omitempty"`
+	PodIP    string `json:"podIP,omitempty"`
+	NodeName string `json:"nodeName"`
+	NodeIP   string `json:"nodeIP,omitempty"`
+	IP       string `json:"ip"`
+	Kind     string `json:"kind"`
+	HTTP     bool   `json:"http"`
+}
+
+type LayeredNetworkCheckRequest struct {
+	Layer   string                 `json:"layer"`
+	Targets []LayeredNetworkTarget `json:"targets"`
 }
 
 type NetworkCheckResponse struct {
@@ -61,7 +78,11 @@ type NetworkCheckResponse struct {
 }
 
 type NetworkCheckResult struct {
+	Layer          string `json:"layer,omitempty"`
 	SourcePod      string `json:"sourcePod"`
+	SourceNode     string `json:"sourceNode,omitempty"`
+	SourceIP       string `json:"sourceIP,omitempty"`
+	TargetName     string `json:"targetName,omitempty"`
 	TargetPod      string `json:"targetPod"`
 	TargetIP       string `json:"targetIP"`
 	TargetNode     string `json:"targetNode"`
@@ -131,8 +152,9 @@ type metadata struct {
 }
 
 type podStatus struct {
-	PodIP string `json:"podIP"`
-	Phase string `json:"phase"`
+	PodIP  string `json:"podIP"`
+	HostIP string `json:"hostIP"`
+	Phase  string `json:"phase"`
 }
 
 type podSpec struct {
@@ -152,6 +174,7 @@ type server struct {
 	agents          []AgentInfo
 	lastError       string
 	network         NetworkCheckSummary
+	layeredNetwork  NetworkCheckSummary
 }
 
 func main() {
@@ -175,6 +198,7 @@ func main() {
 	mux.HandleFunc("/api/agents", srv.handleAgents)
 	mux.HandleFunc("/api/refresh", srv.handleRefresh)
 	mux.HandleFunc("/api/network-check", srv.handleNetworkCheck)
+	mux.HandleFunc("/api/layered-network-check", srv.handleLayeredNetworkCheck)
 	mux.HandleFunc("/", handleFrontend)
 
 	addr := ":80"
@@ -219,6 +243,7 @@ func newServer() (*server, error) {
 		kubeClient:      kubeClient,
 		agents:          []AgentInfo{},
 		network:         NetworkCheckSummary{Results: []NetworkCheckResult{}},
+		layeredNetwork:  NetworkCheckSummary{Results: []NetworkCheckResult{}},
 	}, nil
 }
 
@@ -314,6 +339,7 @@ func (s *server) fetchAgentInfo(ctx context.Context, pod pod) AgentInfo {
 		Namespace:     pod.Metadata.Namespace,
 		PodIP:         pod.Status.PodIP,
 		NodeName:      pod.Spec.NodeName,
+		NodeIP:        pod.Status.HostIP,
 		Phase:         pod.Status.Phase,
 		Status:        "connect-error",
 		LastRefreshAt: now,
@@ -367,6 +393,7 @@ func (s *server) fetchAgentInfo(ctx context.Context, pod pod) AgentInfo {
 			Namespace:     pod.Metadata.Namespace,
 			PodIP:         pod.Status.PodIP,
 			NodeName:      pod.Spec.NodeName,
+			NodeIP:        pod.Status.HostIP,
 			Phase:         pod.Status.Phase,
 			AgentURL:      endpoint,
 			Status:        "invalid-json",
@@ -378,6 +405,9 @@ func (s *server) fetchAgentInfo(ctx context.Context, pod pod) AgentInfo {
 	}
 	info.Phase = pod.Status.Phase
 	info.AgentURL = endpoint
+	if info.NodeIP == "" {
+		info.NodeIP = pod.Status.HostIP
+	}
 	info.Status = "online"
 	info.LastRefreshAt = now
 	log.Printf("agent fetch ok pod=%s node=%s podIP=%s", info.PodName, info.NodeName, info.PodIP)
@@ -412,7 +442,7 @@ func (s *server) runNetworkCheck(ctx context.Context) NetworkCheckSummary {
 	targets := make([]NetworkTarget, 0, len(pods))
 	for _, pod := range pods {
 		if pod.Status.Phase == "Running" && pod.Status.PodIP != "" {
-			targets = append(targets, NetworkTarget{PodName: pod.Metadata.Name, PodIP: pod.Status.PodIP, NodeName: pod.Spec.NodeName})
+			targets = append(targets, NetworkTarget{PodName: pod.Metadata.Name, PodIP: pod.Status.PodIP, NodeName: pod.Spec.NodeName, NodeIP: pod.Status.HostIP})
 		}
 	}
 
@@ -462,6 +492,155 @@ func (s *server) runNetworkCheck(ctx context.Context) NetworkCheckSummary {
 	return summary
 }
 
+func (s *server) runLayeredNetworkCheck(ctx context.Context) NetworkCheckSummary {
+	log.Printf("layered network check started")
+	startedAt := time.Now().Format(time.RFC3339)
+	s.mu.Lock()
+	s.layeredNetwork.Running = true
+	s.layeredNetwork.StartedAt = startedAt
+	s.layeredNetwork.CompletedAt = ""
+	s.layeredNetwork.Error = ""
+	s.mu.Unlock()
+
+	pods, err := s.listAgentPods(ctx)
+	if err != nil {
+		summary := NetworkCheckSummary{Running: false, StartedAt: startedAt, CompletedAt: time.Now().Format(time.RFC3339), Error: err.Error(), Results: []NetworkCheckResult{}}
+		s.setLayeredNetworkSummary(summary)
+		log.Printf("layered network check failed discovery error=%v", err)
+		return summary
+	}
+
+	layerTargets := buildLayerTargets(pods)
+	layerOrder := []string{"pod-to-pod", "node-to-node", "node-to-pod", "pod-to-node"}
+	results := make([]NetworkCheckResult, 0)
+	sourceErrors := make([]string, 0)
+	var mu sync.Mutex
+
+	for _, layer := range layerOrder {
+		targets := layerTargets[layer]
+		log.Printf("layered network check layer=%s sources=%d targets=%d", layer, len(pods), len(targets))
+		var wg sync.WaitGroup
+		for _, source := range pods {
+			source := source
+			layer := layer
+			targets := targets
+			if !sourceCheckableForLayer(source, layer) {
+				mu.Lock()
+				results = append(results, skippedLayerResultsForSource(layer, source, targets)...)
+				mu.Unlock()
+				continue
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sourceResults, err := s.callAgentLayeredNetworkCheck(ctx, layer, source, targets)
+				mu.Lock()
+				defer mu.Unlock()
+				if err != nil {
+					sourceErrors = append(sourceErrors, fmt.Sprintf("%s/%s: %v", layer, source.Metadata.Name, err))
+					results = append(results, failedLayerResultsForSource(layer, source, targets, err.Error())...)
+					log.Printf("layered network check source failed layer=%s pod=%s error=%v", layer, source.Metadata.Name, err)
+					return
+				}
+				results = append(results, sourceResults...)
+				log.Printf("layered network check source ok layer=%s pod=%s results=%d", layer, source.Metadata.Name, len(sourceResults))
+			}()
+		}
+		wg.Wait()
+	}
+
+	summary := NetworkCheckSummary{
+		Running:      false,
+		StartedAt:    startedAt,
+		CompletedAt:  time.Now().Format(time.RFC3339),
+		AgentCount:   len(pods),
+		Results:      results,
+		SourceErrors: sourceErrors,
+	}
+	if len(sourceErrors) > 0 {
+		summary.Error = strings.Join(sourceErrors, "; ")
+	}
+	s.setLayeredNetworkSummary(summary)
+	log.Printf("layered network check completed agents=%d results=%d errors=%d", len(pods), len(results), len(sourceErrors))
+	return summary
+}
+
+func buildLayerTargets(pods []pod) map[string][]LayeredNetworkTarget {
+	podTargets := make([]LayeredNetworkTarget, 0, len(pods))
+	nodeTargets := make([]LayeredNetworkTarget, 0, len(pods))
+	seenNodes := map[string]bool{}
+	for _, pod := range pods {
+		if pod.Status.Phase == "Running" && pod.Status.PodIP != "" {
+			podTargets = append(podTargets, LayeredNetworkTarget{
+				Name:     pod.Metadata.Name,
+				PodName:  pod.Metadata.Name,
+				PodIP:    pod.Status.PodIP,
+				NodeName: pod.Spec.NodeName,
+				NodeIP:   pod.Status.HostIP,
+				IP:       pod.Status.PodIP,
+				Kind:     "pod",
+				HTTP:     true,
+			})
+		}
+		if pod.Spec.NodeName != "" && pod.Status.HostIP != "" && !seenNodes[pod.Spec.NodeName] {
+			seenNodes[pod.Spec.NodeName] = true
+			nodeTargets = append(nodeTargets, LayeredNetworkTarget{
+				Name:     pod.Spec.NodeName,
+				NodeName: pod.Spec.NodeName,
+				NodeIP:   pod.Status.HostIP,
+				IP:       pod.Status.HostIP,
+				Kind:     "node",
+			})
+		}
+	}
+	return map[string][]LayeredNetworkTarget{
+		"pod-to-pod":   podTargets,
+		"node-to-node": nodeTargets,
+		"node-to-pod":  podTargets,
+		"pod-to-node":  nodeTargets,
+	}
+}
+
+func sourceCheckableForLayer(source pod, layer string) bool {
+	if source.Status.Phase != "Running" || source.Status.PodIP == "" {
+		return false
+	}
+	if strings.HasPrefix(layer, "node-to-") && source.Status.HostIP == "" {
+		return false
+	}
+	return true
+}
+
+func (s *server) callAgentLayeredNetworkCheck(ctx context.Context, layer string, source pod, targets []LayeredNetworkTarget) ([]NetworkCheckResult, error) {
+	endpoint := fmt.Sprintf("http://%s:%d/api/layered-network-check", source.Status.PodIP, s.agentPort)
+	payload, err := json.Marshal(LayeredNetworkCheckRequest{Layer: layer, Targets: targets})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 45 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("agent returned %s: %s", resp.Status, string(body))
+	}
+	var agentResponse NetworkCheckResponse
+	if err := json.Unmarshal(body, &agentResponse); err != nil {
+		return nil, err
+	}
+	return agentResponse.Results, nil
+}
+
 func (s *server) callAgentNetworkCheck(ctx context.Context, source pod, targets []NetworkTarget) ([]NetworkCheckResult, error) {
 	endpoint := fmt.Sprintf("http://%s:%d/api/network-check", source.Status.PodIP, s.agentPort)
 	payload, err := json.Marshal(NetworkCheckRequest{Targets: targets})
@@ -503,6 +682,9 @@ func skippedResultsForSource(source pod, targets []NetworkTarget) []NetworkCheck
 	for _, target := range targets {
 		results = append(results, NetworkCheckResult{
 			SourcePod:  source.Metadata.Name,
+			SourceNode: source.Spec.NodeName,
+			SourceIP:   source.Status.PodIP,
+			TargetName: target.PodName,
 			TargetPod:  target.PodName,
 			TargetIP:   target.PodIP,
 			TargetNode: target.NodeName,
@@ -519,6 +701,9 @@ func failedResultsForSource(source pod, targets []NetworkTarget, reason string) 
 	for _, target := range targets {
 		results = append(results, NetworkCheckResult{
 			SourcePod:  source.Metadata.Name,
+			SourceNode: source.Spec.NodeName,
+			SourceIP:   source.Status.PodIP,
+			TargetName: target.PodName,
 			TargetPod:  target.PodName,
 			TargetIP:   target.PodIP,
 			TargetNode: target.NodeName,
@@ -530,11 +715,67 @@ func failedResultsForSource(source pod, targets []NetworkTarget, reason string) 
 	return results
 }
 
+func skippedLayerResultsForSource(layer string, source pod, targets []LayeredNetworkTarget) []NetworkCheckResult {
+	reason := "source pod is not checkable"
+	if source.Status.Phase != "Running" {
+		reason = "source pod phase is " + source.Status.Phase
+	} else if source.Status.PodIP == "" {
+		reason = "source pod has no pod IP"
+	} else if strings.HasPrefix(layer, "node-to-") && source.Status.HostIP == "" {
+		reason = "source node has no host IP"
+	}
+	results := make([]NetworkCheckResult, 0, len(targets))
+	for _, target := range targets {
+		results = append(results, NetworkCheckResult{
+			Layer:      layer,
+			SourcePod:  source.Metadata.Name,
+			SourceNode: source.Spec.NodeName,
+			SourceIP:   sourceIPForLayer(source, layer),
+			TargetName: target.Name,
+			TargetPod:  target.PodName,
+			TargetIP:   target.IP,
+			TargetNode: target.NodeName,
+			Skipped:    true,
+			SkipReason: reason,
+			CheckedAt:  time.Now().Format(time.RFC3339),
+		})
+	}
+	return results
+}
+
+func failedLayerResultsForSource(layer string, source pod, targets []LayeredNetworkTarget, reason string) []NetworkCheckResult {
+	results := make([]NetworkCheckResult, 0, len(targets))
+	for _, target := range targets {
+		results = append(results, NetworkCheckResult{
+			Layer:      layer,
+			SourcePod:  source.Metadata.Name,
+			SourceNode: source.Spec.NodeName,
+			SourceIP:   sourceIPForLayer(source, layer),
+			TargetName: target.Name,
+			TargetPod:  target.PodName,
+			TargetIP:   target.IP,
+			TargetNode: target.NodeName,
+			HTTPError:  reason,
+			PingError:  reason,
+			CheckedAt:  time.Now().Format(time.RFC3339),
+		})
+	}
+	return results
+}
+
+func sourceIPForLayer(source pod, layer string) string {
+	if strings.HasPrefix(layer, "node-to-") {
+		return source.Status.HostIP
+	}
+	return source.Status.PodIP
+}
+
 func runAgent() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleAgentIndex)
 	mux.HandleFunc("/api/node-info", handleAgentNodeInfo)
 	mux.HandleFunc("/api/network-check", handleAgentNetworkCheck)
+	mux.HandleFunc("/api/layered-network-check", handleAgentLayeredNetworkCheck)
 	addr := ":80"
 	log.Printf("k8s-tool-agent listening on %s pod=%s namespace=%s podIP=%s node=%s hostIP=%s", addr, os.Getenv("POD_NAME"), os.Getenv("POD_NAMESPACE"), os.Getenv("POD_IP"), os.Getenv("NODE_NAME"), os.Getenv("HOST_IP"))
 	log.Fatal(http.ListenAndServe(addr, mux))
@@ -614,6 +855,46 @@ func handleAgentNetworkCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleAgentLayeredNetworkCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req LayeredNetworkCheckRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !validNetworkLayer(req.Layer) {
+		http.Error(w, "invalid layer", http.StatusBadRequest)
+		return
+	}
+	info := collectAgentInfo()
+	log.Printf("layered network check requested source=%s layer=%s targets=%d", info.PodName, req.Layer, len(req.Targets))
+	results := make([]NetworkCheckResult, len(req.Targets))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 16)
+	for i, target := range req.Targets {
+		i, target := i, target
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results[i] = runLayeredTargetCheck(info, req.Layer, target)
+		}()
+	}
+	wg.Wait()
+	log.Printf("layered network check completed source=%s layer=%s results=%d", info.PodName, req.Layer, len(results))
+	writeJSON(w, NetworkCheckResponse{
+		SourcePod:  info.PodName,
+		SourceIP:   sourceIPForAgentLayer(info, req.Layer),
+		SourceNode: info.NodeName,
+		CheckedAt:  time.Now().Format(time.RFC3339),
+		Results:    results,
+	})
+}
+
 func collectAgentInfo() AgentInfo {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -660,7 +941,11 @@ func memInfoKB(key string) int64 {
 
 func runTargetCheck(source AgentInfo, target NetworkTarget) NetworkCheckResult {
 	result := NetworkCheckResult{
+		Layer:      "pod-to-pod",
 		SourcePod:  source.PodName,
+		SourceNode: source.NodeName,
+		SourceIP:   source.PodIP,
+		TargetName: target.PodName,
 		TargetPod:  target.PodName,
 		TargetIP:   target.PodIP,
 		TargetNode: target.NodeName,
@@ -710,12 +995,134 @@ func runTargetCheck(source AgentInfo, target NetworkTarget) NetworkCheckResult {
 	return result
 }
 
+func runLayeredTargetCheck(source AgentInfo, layer string, target LayeredNetworkTarget) NetworkCheckResult {
+	result := NetworkCheckResult{
+		Layer:      layer,
+		SourcePod:  source.PodName,
+		SourceNode: source.NodeName,
+		SourceIP:   sourceIPForAgentLayer(source, layer),
+		TargetName: target.Name,
+		TargetPod:  target.PodName,
+		TargetIP:   target.IP,
+		TargetNode: target.NodeName,
+		CheckedAt:  time.Now().Format(time.RFC3339),
+	}
+	if target.IP == "" {
+		result.Skipped = true
+		result.SkipReason = "target has no IP"
+		return result
+	}
+
+	useHostNet := strings.HasPrefix(layer, "node-to-")
+	runPingCheck(&result, target.IP, useHostNet)
+	if target.HTTP {
+		runHTTPCheck(&result, target.IP, useHostNet)
+	}
+	return result
+}
+
+func runPingCheck(result *NetworkCheckResult, targetIP string, useHostNet bool) {
+	pingStart := time.Now()
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	pingOutput, pingErr := runNetworkCommand(pingCtx, useHostNet, "ping", "-c", "1", "-W", "2", targetIP)
+	pingCancel()
+	result.PingDurationMS = time.Since(pingStart).Milliseconds()
+	if pingErr != nil {
+		result.PingError = strings.TrimSpace(string(pingOutput))
+		if result.PingError == "" {
+			result.PingError = pingErr.Error()
+		}
+		return
+	}
+	result.PingOK = true
+}
+
+func runHTTPCheck(result *NetworkCheckResult, targetIP string, useHostNet bool) {
+	httpStart := time.Now()
+	httpCtx, httpCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer httpCancel()
+	if useHostNet {
+		output, err := runNetworkCommand(httpCtx, true, "curl", "-fsS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "3", fmt.Sprintf("http://%s:80/api/node-info", targetIP))
+		result.HTTPDurationMS = time.Since(httpStart).Milliseconds()
+		if err != nil {
+			result.HTTPError = strings.TrimSpace(string(output))
+			if result.HTTPError == "" {
+				result.HTTPError = err.Error()
+			}
+			return
+		}
+		status, err := strconv.Atoi(strings.TrimSpace(string(output)))
+		if err != nil {
+			result.HTTPError = "invalid curl status: " + strings.TrimSpace(string(output))
+			return
+		}
+		result.HTTPStatus = status
+		result.HTTPOK = status >= 200 && status < 300
+		if !result.HTTPOK {
+			result.HTTPError = fmt.Sprintf("HTTP status %d", status)
+		}
+		return
+	}
+
+	req, err := http.NewRequestWithContext(httpCtx, http.MethodGet, fmt.Sprintf("http://%s:80/api/node-info", targetIP), nil)
+	if err == nil {
+		resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+		if err != nil {
+			result.HTTPError = err.Error()
+		} else {
+			result.HTTPStatus = resp.StatusCode
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			result.HTTPOK = resp.StatusCode >= 200 && resp.StatusCode < 300
+			if !result.HTTPOK {
+				result.HTTPError = fmt.Sprintf("HTTP status %d", resp.StatusCode)
+			}
+		}
+	} else {
+		result.HTTPError = err.Error()
+	}
+	result.HTTPDurationMS = time.Since(httpStart).Milliseconds()
+}
+
+func runNetworkCommand(ctx context.Context, useHostNet bool, name string, args ...string) ([]byte, error) {
+	if useHostNet {
+		nsenterArgs := append([]string{"-t", "1", "-n", name}, args...)
+		return exec.CommandContext(ctx, "nsenter", nsenterArgs...).CombinedOutput()
+	}
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+func validNetworkLayer(layer string) bool {
+	switch layer {
+	case "pod-to-pod", "node-to-node", "node-to-pod", "pod-to-node":
+		return true
+	default:
+		return false
+	}
+}
+
+func sourceIPForAgentLayer(source AgentInfo, layer string) string {
+	if strings.HasPrefix(layer, "node-to-") {
+		return source.NodeIP
+	}
+	return source.PodIP
+}
+
 func (s *server) setNetworkSummary(summary NetworkCheckSummary) {
 	if summary.Results == nil {
 		summary.Results = []NetworkCheckResult{}
 	}
 	s.mu.Lock()
 	s.network = summary
+	s.mu.Unlock()
+}
+
+func (s *server) setLayeredNetworkSummary(summary NetworkCheckSummary) {
+	if summary.Results == nil {
+		summary.Results = []NetworkCheckResult{}
+	}
+	s.mu.Lock()
+	s.layeredNetwork = summary
 	s.mu.Unlock()
 }
 
@@ -746,6 +1153,20 @@ func (s *server) handleNetworkCheck(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 		summary := s.runNetworkCheck(ctx)
+		writeJSON(w, summary)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *server) handleLayeredNetworkCheck(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.writeLayeredNetwork(w)
+	case http.MethodPost:
+		ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
+		defer cancel()
+		summary := s.runLayeredNetworkCheck(ctx)
 		writeJSON(w, summary)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -796,6 +1217,13 @@ func (s *server) writeAgents(w http.ResponseWriter) {
 func (s *server) writeNetwork(w http.ResponseWriter) {
 	s.mu.RLock()
 	data := cloneNetworkSummary(s.network)
+	s.mu.RUnlock()
+	writeJSON(w, data)
+}
+
+func (s *server) writeLayeredNetwork(w http.ResponseWriter) {
+	s.mu.RLock()
+	data := cloneNetworkSummary(s.layeredNetwork)
 	s.mu.RUnlock()
 	writeJSON(w, data)
 }
@@ -865,7 +1293,7 @@ func buildNetworkView(summary NetworkCheckSummary) NetworkView {
 		if !result.Skipped && !result.PingOK {
 			view.Stats.PingFailed++
 		}
-		if !result.Skipped && !result.HTTPOK {
+		if !result.Skipped && httpRequired(result) && !result.HTTPOK {
 			view.Stats.HTTPFailed++
 		}
 	}
@@ -877,7 +1305,11 @@ func buildNetworkView(summary NetworkCheckSummary) NetworkView {
 }
 
 func networkResultOK(result NetworkCheckResult) bool {
-	return !result.Skipped && result.PingOK && result.HTTPOK
+	return !result.Skipped && result.PingOK && (!httpRequired(result) || result.HTTPOK)
+}
+
+func httpRequired(result NetworkCheckResult) bool {
+	return result.Layer == "" || result.Layer == "pod-to-pod" || result.Layer == "node-to-pod"
 }
 
 func kbToGiB(kb int64) string {

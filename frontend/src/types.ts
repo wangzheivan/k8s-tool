@@ -25,7 +25,11 @@ export interface AgentsResponse {
 }
 
 export interface NetworkCheckResult {
+  layer?: string;
   sourcePod: string;
+  sourceNode?: string;
+  sourceIP?: string;
+  targetName?: string;
   targetPod: string;
   targetIP: string;
   targetNode: string;

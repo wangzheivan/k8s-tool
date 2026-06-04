@@ -44,17 +44,17 @@ export function SourceSummaryTable({ sources }: SourceSummaryTableProps) {
                     </thead>
                     <tbody>
                       {source.failures.map((failure) => (
-                        <tr key={`${source.sourcePod}-${failure.targetPod}-${failure.targetIP}`}>
+                        <tr key={`${failure.layer}-${source.sourcePod}-${failure.targetName}-${failure.targetIP}`}>
                           <td>
-                            {failure.targetPod}
+                            {failure.targetName || failure.targetPod}
                             <br />
                             <span className="meta">
                               {failure.targetIP} {failure.targetNode}
                             </span>
                           </td>
                           <td className={failure.pingOK ? "ok" : "failed"}>{failure.skipped ? "skipped" : `${failure.pingOK ? "ok" : "failed"} ${failure.pingDurationMS}ms`}</td>
-                          <td className={failure.httpOK ? "ok" : "failed"}>
-                            {failure.skipped ? "skipped" : `${failure.httpOK ? "ok" : "failed"} status=${failure.httpStatus ?? 0} ${failure.httpDurationMS}ms`}
+                          <td className={failure.httpOK ? "ok" : failure.httpDurationMS ? "failed" : ""}>
+                            {failure.skipped ? "skipped" : failure.httpDurationMS ? `${failure.httpOK ? "ok" : "failed"} status=${failure.httpStatus ?? 0} ${failure.httpDurationMS}ms` : "not checked"}
                           </td>
                           <td>
                             <pre>{`${failure.pingError ?? ""}${failure.httpError ?? ""}${failure.skipReason ?? ""}`}</pre>

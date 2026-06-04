@@ -40,7 +40,8 @@ RUN apk add --no-cache \
     net-tools \
     nginx \
     procps \
-    tini
+    tini \
+    util-linux
 
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \

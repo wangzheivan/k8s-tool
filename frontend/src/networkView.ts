@@ -1,7 +1,7 @@
 import type { NetworkCheckResult, NetworkCheckSummary, NetworkSourceSummary, NetworkView } from "./types";
 
-export function buildNetworkView(summary: NetworkCheckSummary): NetworkView {
-  const results = summary.results ?? [];
+export function buildNetworkView(summary: NetworkCheckSummary, layer?: string): NetworkView {
+  const results = (summary.results ?? []).filter((result) => !layer || result.layer === layer);
   const view: NetworkView = {
     stats: {
       agentCount: summary.agentCount,
@@ -60,7 +60,7 @@ export function buildNetworkView(summary: NetworkCheckSummary): NetworkView {
     if (!result.skipped && !result.pingOK) {
       view.stats.pingFailed += 1;
     }
-    if (!result.skipped && !result.httpOK) {
+    if (!result.skipped && httpRequired(result) && !result.httpOK) {
       view.stats.httpFailed += 1;
     }
   }
@@ -69,5 +69,9 @@ export function buildNetworkView(summary: NetworkCheckSummary): NetworkView {
 }
 
 function networkResultOK(result: NetworkCheckResult): boolean {
-  return !result.skipped && result.pingOK && result.httpOK;
+  return !result.skipped && result.pingOK && (!httpRequired(result) || result.httpOK);
+}
+
+function httpRequired(result: NetworkCheckResult): boolean {
+  return !result.layer || result.layer === "pod-to-pod" || result.layer === "node-to-pod";
 }

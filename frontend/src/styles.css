@@ -53,6 +53,23 @@ button:disabled {
   opacity: 0.65;
 }
 
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.tabs button {
+  background: #eef3f8;
+}
+
+.tabs button.active {
+  background: #1f4f82;
+  border-color: #1f4f82;
+  color: #ffffff;
+}
+
 section {
   margin-top: 24px;
 }
@@ -182,5 +199,15 @@ pre {
 
   summary {
     color: #a7c7e8;
+  }
+
+  .tabs button {
+    background: #263446;
+  }
+
+  .tabs button.active {
+    background: #4f88c6;
+    border-color: #4f88c6;
+    color: #07101b;
   }
 }

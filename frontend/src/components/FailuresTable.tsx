@@ -2,15 +2,17 @@ import type { NetworkCheckResult } from "../types";
 
 interface FailuresTableProps {
   failures: NetworkCheckResult[];
+  showLayer?: boolean;
 }
 
-export function FailuresTable({ failures }: FailuresTableProps) {
+export function FailuresTable({ failures, showLayer = false }: FailuresTableProps) {
   return (
     <table>
       <thead>
         <tr>
+          {showLayer && <th>Layer</th>}
           <th>Source Pod</th>
-          <th>Target Pod</th>
+          <th>Target</th>
           <th>Target IP</th>
           <th>Ping</th>
           <th>HTTP</th>
@@ -19,10 +21,17 @@ export function FailuresTable({ failures }: FailuresTableProps) {
       </thead>
       <tbody>
         {failures.map((failure) => (
-          <tr key={`${failure.sourcePod}-${failure.targetPod}-${failure.targetIP}`}>
-            <td>{failure.sourcePod}</td>
+          <tr key={`${failure.layer}-${failure.sourcePod}-${failure.targetName}-${failure.targetIP}`}>
+            {showLayer && <td>{failure.layer}</td>}
             <td>
-              {failure.targetPod}
+              {failure.sourcePod}
+              <br />
+              <span className="meta">
+                {failure.sourceNode} {failure.sourceIP}
+              </span>
+            </td>
+            <td>
+              {failure.targetName || failure.targetPod}
               <br />
               <span className="meta">{failure.targetNode}</span>
             </td>
@@ -35,7 +44,7 @@ export function FailuresTable({ failures }: FailuresTableProps) {
               </details>
             </td>
             <td className={failure.httpOK ? "ok" : "failed"}>
-              {failure.skipped ? "skipped" : `${failure.httpOK ? "ok" : "failed"} status=${failure.httpStatus ?? 0} ${failure.httpDurationMS}ms`}
+              {failure.skipped ? "skipped" : failure.httpDurationMS ? `${failure.httpOK ? "ok" : "failed"} status=${failure.httpStatus ?? 0} ${failure.httpDurationMS}ms` : "not checked"}
               <details>
                 <summary>Details</summary>
                 <pre>{`${failure.httpError ?? ""}${failure.skipReason ?? ""}`}</pre>

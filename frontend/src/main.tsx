@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { fetchAgents, fetchNetworkCheck, refreshAgents, runNetworkCheck } from "./api";
+import { fetchAgents, fetchLayeredNetworkCheck, refreshAgents, runLayeredNetworkCheck } from "./api";
 import { AgentStatus } from "./components/AgentStatus";
 import { NetworkDiagnostics } from "./components/NetworkDiagnostics";
 import "./styles.css";
@@ -28,7 +28,7 @@ function App() {
 
   async function loadNetwork() {
     try {
-      setNetwork(await fetchNetworkCheck());
+      setNetwork(await fetchLayeredNetworkCheck());
     } catch (err) {
       setError(String(err));
     }
@@ -50,7 +50,7 @@ function App() {
     setRunningNetwork(true);
     setError("");
     try {
-      setNetwork(await runNetworkCheck());
+      setNetwork(await runLayeredNetworkCheck());
     } catch (err) {
       setError(String(err));
     } finally {

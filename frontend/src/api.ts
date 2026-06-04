@@ -24,3 +24,11 @@ export function fetchNetworkCheck(): Promise<NetworkCheckSummary> {
 export function runNetworkCheck(): Promise<NetworkCheckSummary> {
   return requestJSON<NetworkCheckSummary>("/api/network-check", { method: "POST" });
 }
+
+export function fetchLayeredNetworkCheck(): Promise<NetworkCheckSummary> {
+  return requestJSON<NetworkCheckSummary>("/api/layered-network-check");
+}
+
+export function runLayeredNetworkCheck(): Promise<NetworkCheckSummary> {
+  return requestJSON<NetworkCheckSummary>("/api/layered-network-check", { method: "POST" });
+}

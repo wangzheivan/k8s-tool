@@ -17,9 +17,10 @@ spec:
         app.kubernetes.io/component: agent
     spec:
       serviceAccountName: k8s-tool
+      hostPID: true
       containers:
         - name: k8s-tool-agent
-          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.0
+          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.1
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
