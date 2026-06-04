@@ -135,14 +135,62 @@ type NetworkView struct {
 	Failures []NetworkCheckResult   `json:"failures"`
 }
 
+type EtcdCommandResult struct {
+	Name       string `json:"name"`
+	Command    string `json:"command"`
+	ExitCode   int    `json:"exitCode"`
+	Stdout     string `json:"stdout"`
+	Stderr     string `json:"stderr"`
+	DurationMS int64  `json:"durationMS"`
+	Error      string `json:"error,omitempty"`
+}
+
+type EtcdStatusResult struct {
+	NodeName        string              `json:"nodeName"`
+	NodeIP          string              `json:"nodeIP"`
+	AgentPod        string              `json:"agentPod,omitempty"`
+	AgentPodIP      string              `json:"agentPodIP,omitempty"`
+	AgentURL        string              `json:"agentURL,omitempty"`
+	Status          string              `json:"status"`
+	Message         string              `json:"message,omitempty"`
+	EtcdContainerID string              `json:"etcdContainerID,omitempty"`
+	CheckedAt       string              `json:"checkedAt"`
+	DurationMS      int64               `json:"durationMS"`
+	AlarmCount      int                 `json:"alarmCount"`
+	Commands        []EtcdCommandResult `json:"commands"`
+}
+
+type EtcdStatusSummary struct {
+	Running            bool               `json:"running"`
+	StartedAt          string             `json:"startedAt,omitempty"`
+	CompletedAt        string             `json:"completedAt,omitempty"`
+	Error              string             `json:"error,omitempty"`
+	EtcdNodeCount      int                `json:"etcdNodeCount"`
+	CheckedNodeCount   int                `json:"checkedNodeCount"`
+	HealthyNodeCount   int                `json:"healthyNodeCount"`
+	UnhealthyNodeCount int                `json:"unhealthyNodeCount"`
+	AlarmCount         int                `json:"alarmCount"`
+	Results            []EtcdStatusResult `json:"results"`
+	SourceErrors       []string           `json:"sourceErrors,omitempty"`
+}
+
 type podList struct {
 	Items []pod `json:"items"`
+}
+
+type nodeList struct {
+	Items []node `json:"items"`
 }
 
 type pod struct {
 	Metadata metadata  `json:"metadata"`
 	Spec     podSpec   `json:"spec"`
 	Status   podStatus `json:"status"`
+}
+
+type node struct {
+	Metadata metadata   `json:"metadata"`
+	Status   nodeStatus `json:"status"`
 }
 
 type metadata struct {
@@ -161,20 +209,32 @@ type podSpec struct {
 	NodeName string `json:"nodeName"`
 }
 
+type nodeStatus struct {
+	Addresses []nodeAddress `json:"addresses"`
+}
+
+type nodeAddress struct {
+	Type    string `json:"type"`
+	Address string `json:"address"`
+}
+
 type server struct {
-	namespace       string
-	agentSelector   string
-	agentPort       int
-	refreshInterval time.Duration
-	kubeAPI         string
-	token           string
-	httpClient      *http.Client
-	kubeClient      *http.Client
-	mu              sync.RWMutex
-	agents          []AgentInfo
-	lastError       string
-	network         NetworkCheckSummary
-	layeredNetwork  NetworkCheckSummary
+	namespace        string
+	agentSelector    string
+	etcdNodeSelector string
+	agentPort        int
+	refreshInterval  time.Duration
+	etcdCheckTimeout time.Duration
+	kubeAPI          string
+	token            string
+	httpClient       *http.Client
+	kubeClient       *http.Client
+	mu               sync.RWMutex
+	agents           []AgentInfo
+	lastError        string
+	network          NetworkCheckSummary
+	layeredNetwork   NetworkCheckSummary
+	etcd             EtcdStatusSummary
 }
 
 func main() {
@@ -199,10 +259,11 @@ func main() {
 	mux.HandleFunc("/api/refresh", srv.handleRefresh)
 	mux.HandleFunc("/api/network-check", srv.handleNetworkCheck)
 	mux.HandleFunc("/api/layered-network-check", srv.handleLayeredNetworkCheck)
+	mux.HandleFunc("/api/etcd/status", srv.handleEtcdStatus)
 	mux.HandleFunc("/", handleFrontend)
 
 	addr := ":80"
-	log.Printf("k8s-tool-server listening on %s namespace=%s selector=%q agentPort=%d refresh=%s", addr, srv.namespace, srv.agentSelector, srv.agentPort, srv.refreshInterval)
+	log.Printf("k8s-tool-server listening on %s namespace=%s selector=%q etcdSelector=%q agentPort=%d refresh=%s", addr, srv.namespace, srv.agentSelector, srv.etcdNodeSelector, srv.agentPort, srv.refreshInterval)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
@@ -210,6 +271,7 @@ func newServer() (*server, error) {
 	namespace := env("POD_NAMESPACE", readFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "default"))
 	refreshSeconds := envInt("REFRESH_INTERVAL_SECONDS", 10)
 	agentPort := envInt("AGENT_PORT", 80)
+	etcdCheckTimeout := envInt("ETCD_CHECK_TIMEOUT_SECONDS", 30)
 
 	tokenBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
 	if err != nil {
@@ -233,17 +295,20 @@ func newServer() (*server, error) {
 	}
 
 	return &server{
-		namespace:       namespace,
-		agentSelector:   env("AGENT_SELECTOR", "app.kubernetes.io/name=k8s-tool,app.kubernetes.io/component=agent"),
-		agentPort:       agentPort,
-		refreshInterval: time.Duration(refreshSeconds) * time.Second,
-		kubeAPI:         kubeAPI,
-		token:           strings.TrimSpace(string(tokenBytes)),
-		httpClient:      &http.Client{Timeout: 3 * time.Second},
-		kubeClient:      kubeClient,
-		agents:          []AgentInfo{},
-		network:         NetworkCheckSummary{Results: []NetworkCheckResult{}},
-		layeredNetwork:  NetworkCheckSummary{Results: []NetworkCheckResult{}},
+		namespace:        namespace,
+		agentSelector:    env("AGENT_SELECTOR", "app.kubernetes.io/name=k8s-tool,app.kubernetes.io/component=agent"),
+		etcdNodeSelector: env("ETCD_NODE_SELECTOR", "node-role.kubernetes.io/etcd"),
+		agentPort:        agentPort,
+		refreshInterval:  time.Duration(refreshSeconds) * time.Second,
+		etcdCheckTimeout: time.Duration(etcdCheckTimeout) * time.Second,
+		kubeAPI:          kubeAPI,
+		token:            strings.TrimSpace(string(tokenBytes)),
+		httpClient:       &http.Client{Timeout: 3 * time.Second},
+		kubeClient:       kubeClient,
+		agents:           []AgentInfo{},
+		network:          NetworkCheckSummary{Results: []NetworkCheckResult{}},
+		layeredNetwork:   NetworkCheckSummary{Results: []NetworkCheckResult{}},
+		etcd:             EtcdStatusSummary{Results: []EtcdStatusResult{}},
 	}, nil
 }
 
@@ -326,6 +391,39 @@ func (s *server) listAgentPods(ctx context.Context) ([]pod, error) {
 	}
 
 	var list podList
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (s *server) listEtcdNodes(ctx context.Context) ([]node, error) {
+	if s.kubeAPI == "" || s.token == "" {
+		return nil, errors.New("Kubernetes service account environment is unavailable")
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/nodes?labelSelector=%s", s.kubeAPI, url.QueryEscape(s.etcdNodeSelector))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.token)
+
+	resp, err := s.kubeClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Kubernetes API returned %s: %s", resp.Status, string(body))
+	}
+
+	var list nodeList
 	if err := json.Unmarshal(body, &list); err != nil {
 		return nil, err
 	}
@@ -565,6 +663,198 @@ func (s *server) runLayeredNetworkCheck(ctx context.Context) NetworkCheckSummary
 	return summary
 }
 
+func (s *server) runEtcdStatusCheck(ctx context.Context) EtcdStatusSummary {
+	log.Printf("etcd status check started selector=%q", s.etcdNodeSelector)
+	startedAt := time.Now().Format(time.RFC3339)
+	s.mu.Lock()
+	s.etcd.Running = true
+	s.etcd.StartedAt = startedAt
+	s.etcd.CompletedAt = ""
+	s.etcd.Error = ""
+	s.mu.Unlock()
+
+	nodes, err := s.listEtcdNodes(ctx)
+	if err != nil {
+		summary := EtcdStatusSummary{Running: false, StartedAt: startedAt, CompletedAt: time.Now().Format(time.RFC3339), Error: err.Error(), Results: []EtcdStatusResult{}}
+		s.setEtcdSummary(summary)
+		log.Printf("etcd status check failed node discovery error=%v", err)
+		return summary
+	}
+	if len(nodes) == 0 {
+		summary := EtcdStatusSummary{
+			Running:       false,
+			StartedAt:     startedAt,
+			CompletedAt:   time.Now().Format(time.RFC3339),
+			Error:         "no etcd nodes found",
+			Results:       []EtcdStatusResult{},
+			SourceErrors:  []string{"no-etcd-nodes-found"},
+			EtcdNodeCount: 0,
+		}
+		s.setEtcdSummary(summary)
+		log.Printf("etcd status check completed no etcd nodes found selector=%q", s.etcdNodeSelector)
+		return summary
+	}
+
+	pods, err := s.listAgentPods(ctx)
+	if err != nil {
+		summary := EtcdStatusSummary{Running: false, StartedAt: startedAt, CompletedAt: time.Now().Format(time.RFC3339), Error: err.Error(), EtcdNodeCount: len(nodes), Results: []EtcdStatusResult{}}
+		s.setEtcdSummary(summary)
+		log.Printf("etcd status check failed agent discovery error=%v", err)
+		return summary
+	}
+
+	agentsByNode := agentPodsByNode(pods)
+	results := make([]EtcdStatusResult, 0, len(nodes))
+	sourceErrors := make([]string, 0)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, n := range nodes {
+		n := n
+		agent, ok := agentsByNode[n.Metadata.Name]
+		if !ok {
+			result := etcdNodeResult(n, "missing-agent-on-etcd-node", "no k8s-tool-agent pod is running on this etcd node")
+			results = append(results, result)
+			sourceErrors = append(sourceErrors, fmt.Sprintf("%s: missing-agent-on-etcd-node", n.Metadata.Name))
+			continue
+		}
+		if agent.Status.Phase != "Running" || agent.Status.PodIP == "" {
+			result := etcdNodeResult(n, "agent-connect-error", fmt.Sprintf("agent pod %s is not checkable: phase=%s podIP=%q", agent.Metadata.Name, agent.Status.Phase, agent.Status.PodIP))
+			result.AgentPod = agent.Metadata.Name
+			result.AgentPodIP = agent.Status.PodIP
+			results = append(results, result)
+			sourceErrors = append(sourceErrors, fmt.Sprintf("%s: %s", n.Metadata.Name, result.Message))
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result, err := s.callAgentEtcdStatus(ctx, n, agent)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				failed := etcdNodeResult(n, "agent-connect-error", err.Error())
+				failed.AgentPod = agent.Metadata.Name
+				failed.AgentPodIP = agent.Status.PodIP
+				failed.AgentURL = fmt.Sprintf("http://%s:%d/api/etcd/status", agent.Status.PodIP, s.agentPort)
+				results = append(results, failed)
+				sourceErrors = append(sourceErrors, fmt.Sprintf("%s: %v", n.Metadata.Name, err))
+				log.Printf("etcd status agent failed node=%s pod=%s error=%v", n.Metadata.Name, agent.Metadata.Name, err)
+				return
+			}
+			results = append(results, result)
+			if result.Status != "ok" {
+				sourceErrors = append(sourceErrors, fmt.Sprintf("%s: %s", n.Metadata.Name, result.Status))
+			}
+			log.Printf("etcd status agent ok node=%s pod=%s status=%s alarms=%d", n.Metadata.Name, agent.Metadata.Name, result.Status, result.AlarmCount)
+		}()
+	}
+	wg.Wait()
+
+	summary := EtcdStatusSummary{
+		Running:       false,
+		StartedAt:     startedAt,
+		CompletedAt:   time.Now().Format(time.RFC3339),
+		EtcdNodeCount: len(nodes),
+		Results:       results,
+		SourceErrors:  sourceErrors,
+	}
+	finalizeEtcdSummary(&summary)
+	if len(sourceErrors) > 0 {
+		summary.Error = strings.Join(sourceErrors, "; ")
+	}
+	s.setEtcdSummary(summary)
+	log.Printf("etcd status check completed nodes=%d checked=%d healthy=%d unhealthy=%d alarms=%d errors=%d", summary.EtcdNodeCount, summary.CheckedNodeCount, summary.HealthyNodeCount, summary.UnhealthyNodeCount, summary.AlarmCount, len(sourceErrors))
+	return summary
+}
+
+func (s *server) callAgentEtcdStatus(ctx context.Context, n node, agent pod) (EtcdStatusResult, error) {
+	endpoint := fmt.Sprintf("http://%s:%d/api/etcd/status", agent.Status.PodIP, s.agentPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
+	if err != nil {
+		return EtcdStatusResult{}, err
+	}
+	resp, err := (&http.Client{Timeout: s.etcdCheckTimeout + 5*time.Second}).Do(req)
+	if err != nil {
+		return EtcdStatusResult{}, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return EtcdStatusResult{}, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return EtcdStatusResult{}, fmt.Errorf("agent returned %s: %s", resp.Status, string(body))
+	}
+	var result EtcdStatusResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return EtcdStatusResult{}, err
+	}
+	if result.NodeName == "" {
+		result.NodeName = n.Metadata.Name
+	}
+	if result.NodeIP == "" {
+		result.NodeIP = nodeInternalIP(n)
+	}
+	result.AgentPod = agent.Metadata.Name
+	result.AgentPodIP = agent.Status.PodIP
+	result.AgentURL = endpoint
+	result.AlarmCount = countEtcdAlarms(result.Commands)
+	return result, nil
+}
+
+func agentPodsByNode(pods []pod) map[string]pod {
+	out := make(map[string]pod, len(pods))
+	for _, p := range pods {
+		if p.Spec.NodeName == "" {
+			continue
+		}
+		if existing, ok := out[p.Spec.NodeName]; ok && existing.Status.Phase == "Running" && existing.Status.PodIP != "" {
+			continue
+		}
+		out[p.Spec.NodeName] = p
+	}
+	return out
+}
+
+func etcdNodeResult(n node, status string, message string) EtcdStatusResult {
+	return EtcdStatusResult{
+		NodeName:  n.Metadata.Name,
+		NodeIP:    nodeInternalIP(n),
+		Status:    status,
+		Message:   message,
+		CheckedAt: time.Now().Format(time.RFC3339),
+		Commands:  []EtcdCommandResult{},
+	}
+}
+
+func nodeInternalIP(n node) string {
+	first := ""
+	for _, addr := range n.Status.Addresses {
+		if first == "" {
+			first = addr.Address
+		}
+		if addr.Type == "InternalIP" {
+			return addr.Address
+		}
+	}
+	return first
+}
+
+func finalizeEtcdSummary(summary *EtcdStatusSummary) {
+	if summary.Results == nil {
+		summary.Results = []EtcdStatusResult{}
+	}
+	summary.CheckedNodeCount = len(summary.Results)
+	for _, result := range summary.Results {
+		if result.Status == "ok" {
+			summary.HealthyNodeCount++
+		} else {
+			summary.UnhealthyNodeCount++
+		}
+		summary.AlarmCount += result.AlarmCount
+	}
+}
+
 func buildLayerTargets(pods []pod) map[string][]LayeredNetworkTarget {
 	podTargets := make([]LayeredNetworkTarget, 0, len(pods))
 	nodeTargets := make([]LayeredNetworkTarget, 0, len(pods))
@@ -776,6 +1066,7 @@ func runAgent() {
 	mux.HandleFunc("/api/node-info", handleAgentNodeInfo)
 	mux.HandleFunc("/api/network-check", handleAgentNetworkCheck)
 	mux.HandleFunc("/api/layered-network-check", handleAgentLayeredNetworkCheck)
+	mux.HandleFunc("/api/etcd/status", handleAgentEtcdStatus)
 	addr := ":80"
 	log.Printf("k8s-tool-agent listening on %s pod=%s namespace=%s podIP=%s node=%s hostIP=%s", addr, os.Getenv("POD_NAME"), os.Getenv("POD_NAMESPACE"), os.Getenv("POD_IP"), os.Getenv("NODE_NAME"), os.Getenv("HOST_IP"))
 	log.Fatal(http.ListenAndServe(addr, mux))
@@ -895,6 +1186,18 @@ func handleAgentLayeredNetworkCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleAgentEtcdStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	info := collectAgentInfo()
+	log.Printf("etcd status requested pod=%s node=%s nodeIP=%s", info.PodName, info.NodeName, info.NodeIP)
+	result := runAgentEtcdStatusCheck(info)
+	log.Printf("etcd status completed pod=%s node=%s status=%s commands=%d alarms=%d", info.PodName, info.NodeName, result.Status, len(result.Commands), result.AlarmCount)
+	writeJSON(w, result)
+}
+
 func collectAgentInfo() AgentInfo {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -918,6 +1221,235 @@ func collectAgentInfo() AgentInfo {
 		MemoryUsedKB:  memUsed,
 		CollectedAt:   time.Now().Format(time.RFC3339),
 	}.withMemoryGB()
+}
+
+func runAgentEtcdStatusCheck(info AgentInfo) EtcdStatusResult {
+	start := time.Now()
+	result := EtcdStatusResult{
+		NodeName:   info.NodeName,
+		NodeIP:     info.NodeIP,
+		AgentPod:   info.PodName,
+		AgentPodIP: info.PodIP,
+		Status:     "ok",
+		CheckedAt:  start.Format(time.RFC3339),
+		Commands:   []EtcdCommandResult{},
+	}
+
+	crictlPath := env("RKE2_CRICTL_PATH", "/var/lib/rancher/rke2/bin/crictl")
+	crictlConfig := env("RKE2_CRI_CONFIG_FILE", "/var/lib/rancher/rke2/agent/etc/crictl.yaml")
+	if _, err := os.Stat(crictlPath); err != nil {
+		result.Status = "missing-rke2-path"
+		result.Message = fmt.Sprintf("crictl not found at %s: %v", crictlPath, err)
+		result.DurationMS = time.Since(start).Milliseconds()
+		return result
+	}
+	if _, err := os.Stat(crictlConfig); err != nil {
+		result.Status = "missing-rke2-path"
+		result.Message = fmt.Sprintf("crictl config not found at %s: %v", crictlConfig, err)
+		result.DurationMS = time.Since(start).Milliseconds()
+		return result
+	}
+
+	checkCtx, cancel := context.WithTimeout(context.Background(), time.Duration(envInt("ETCD_CHECK_TIMEOUT_SECONDS", 30))*time.Second)
+	defer cancel()
+
+	find := runCrictlCommand(checkCtx, crictlPath, crictlConfig, "find-etcd-container", "ps", "--name", "etcd", "--quiet")
+	result.Commands = append(result.Commands, find)
+	if find.ExitCode != 0 {
+		result.Status = statusForCommandError(checkCtx, find, "crictl-error")
+		result.Message = commandErrorMessage(find)
+		result.DurationMS = time.Since(start).Milliseconds()
+		return result
+	}
+	containerID := firstNonEmptyLine(find.Stdout)
+	if containerID == "" {
+		result.Status = "etcd-container-not-found"
+		result.Message = "no etcd container found on this node"
+		result.DurationMS = time.Since(start).Milliseconds()
+		return result
+	}
+	result.EtcdContainerID = containerID
+
+	tlsFlags := []string{
+		"--cert", "/var/lib/rancher/rke2/server/tls/etcd/server-client.crt",
+		"--key", "/var/lib/rancher/rke2/server/tls/etcd/server-client.key",
+		"--cacert", "/var/lib/rancher/rke2/server/tls/etcd/server-ca.crt",
+	}
+	member := runEtcdctlCommand(checkCtx, crictlPath, crictlConfig, containerID, "member-list", append([]string{"member", "list", "--write-out=json"}, tlsFlags...)...)
+	result.Commands = append(result.Commands, member)
+	endpoints := endpointsFromMemberList(member.Stdout)
+	endpointFlag := ""
+	if len(endpoints) > 0 {
+		endpointFlag = "--endpoints=" + strings.Join(endpoints, ",")
+	}
+
+	statusArgs := append([]string{"endpoint", "status", "--write-out=json"}, tlsFlags...)
+	if endpointFlag != "" {
+		statusArgs = append(statusArgs, endpointFlag)
+	}
+	result.Commands = append(result.Commands, runEtcdctlCommand(checkCtx, crictlPath, crictlConfig, containerID, "endpoint-status", statusArgs...))
+
+	healthArgs := append([]string{"endpoint", "health", "--write-out=json"}, tlsFlags...)
+	if endpointFlag != "" {
+		healthArgs = append(healthArgs, endpointFlag)
+	}
+	result.Commands = append(result.Commands, runEtcdctlCommand(checkCtx, crictlPath, crictlConfig, containerID, "endpoint-health", healthArgs...))
+	result.Commands = append(result.Commands, runEtcdctlCommand(checkCtx, crictlPath, crictlConfig, containerID, "alarm-list", append([]string{"alarm", "list"}, tlsFlags...)...))
+	result.Commands = append(result.Commands, runEtcdctlCommand(checkCtx, crictlPath, crictlConfig, containerID, "version", "version"))
+
+	result.AlarmCount = countEtcdAlarms(result.Commands)
+	for _, command := range result.Commands {
+		if command.ExitCode != 0 {
+			result.Status = statusForCommandError(checkCtx, command, "command-error")
+			result.Message = fmt.Sprintf("%s failed: %s", command.Name, commandErrorMessage(command))
+			break
+		}
+	}
+	result.DurationMS = time.Since(start).Milliseconds()
+	return result
+}
+
+func runEtcdctlCommand(ctx context.Context, crictlPath, crictlConfig, containerID, name string, args ...string) EtcdCommandResult {
+	crictlArgs := append([]string{"exec", containerID, "etcdctl"}, args...)
+	return runCrictlCommand(ctx, crictlPath, crictlConfig, name, crictlArgs...)
+}
+
+func runCrictlCommand(parent context.Context, crictlPath, crictlConfig, name string, args ...string) EtcdCommandResult {
+	timeout := time.Duration(envInt("ETCD_COMMAND_TIMEOUT_SECONDS", 8)) * time.Second
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+
+	start := time.Now()
+	result := EtcdCommandResult{
+		Name:     name,
+		Command:  crictlPath + " " + strings.Join(args, " "),
+		ExitCode: 0,
+	}
+	cmd := exec.CommandContext(ctx, crictlPath, args...)
+	cmd.Env = append(os.Environ(), "CRI_CONFIG_FILE="+crictlConfig)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	result.DurationMS = time.Since(start).Milliseconds()
+	result.Stdout = strings.TrimSpace(stdout.String())
+	result.Stderr = strings.TrimSpace(stderr.String())
+	if err == nil {
+		return result
+	}
+	result.ExitCode = -1
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		result.ExitCode = exitErr.ExitCode()
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		result.Error = "timeout"
+	} else {
+		result.Error = err.Error()
+	}
+	return result
+}
+
+func statusForCommandError(ctx context.Context, command EtcdCommandResult, fallback string) string {
+	if ctx.Err() == context.DeadlineExceeded || command.Error == "timeout" {
+		return "timeout"
+	}
+	return fallback
+}
+
+func commandErrorMessage(command EtcdCommandResult) string {
+	parts := []string{}
+	if command.Error != "" {
+		parts = append(parts, command.Error)
+	}
+	if command.Stderr != "" {
+		parts = append(parts, command.Stderr)
+	}
+	if command.Stdout != "" {
+		parts = append(parts, command.Stdout)
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("exit code %d", command.ExitCode)
+	}
+	return strings.Join(parts, "; ")
+}
+
+func firstNonEmptyLine(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+func endpointsFromMemberList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var decoded struct {
+		Members []struct {
+			ClientURLs []string `json:"clientURLs"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal([]byte(raw), &decoded); err == nil {
+		endpoints := make([]string, 0)
+		for _, member := range decoded.Members {
+			endpoints = append(endpoints, member.ClientURLs...)
+		}
+		return uniqueNonEmpty(endpoints)
+	}
+
+	endpoints := make([]string, 0)
+	for _, line := range strings.Split(raw, "\n") {
+		parts := strings.Split(line, ",")
+		if len(parts) < 5 {
+			continue
+		}
+		for _, endpoint := range strings.Split(parts[4], " ") {
+			endpoint = strings.TrimSpace(endpoint)
+			if strings.HasPrefix(endpoint, "https://") || strings.HasPrefix(endpoint, "http://") {
+				endpoints = append(endpoints, endpoint)
+			}
+		}
+	}
+	return uniqueNonEmpty(endpoints)
+}
+
+func uniqueNonEmpty(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func countEtcdAlarms(commands []EtcdCommandResult) int {
+	for _, command := range commands {
+		if command.Name != "alarm-list" || command.ExitCode != 0 {
+			continue
+		}
+		stdout := strings.TrimSpace(command.Stdout)
+		if stdout == "" {
+			return 0
+		}
+		count := 0
+		for _, line := range strings.Split(stdout, "\n") {
+			if strings.TrimSpace(line) != "" {
+				count++
+			}
+		}
+		return count
+	}
+	return 0
 }
 
 func memInfoKB(key string) int64 {
@@ -1173,6 +1705,20 @@ func (s *server) handleLayeredNetworkCheck(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+func (s *server) handleEtcdStatus(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.writeEtcdStatus(w)
+	case http.MethodPost:
+		ctx, cancel := context.WithTimeout(r.Context(), s.etcdCheckTimeout+15*time.Second)
+		defer cancel()
+		summary := s.runEtcdStatusCheck(ctx)
+		writeJSON(w, summary)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func handleFrontend(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		http.NotFound(w, r)
@@ -1228,6 +1774,13 @@ func (s *server) writeLayeredNetwork(w http.ResponseWriter) {
 	writeJSON(w, data)
 }
 
+func (s *server) writeEtcdStatus(w http.ResponseWriter) {
+	s.mu.RLock()
+	data := cloneEtcdSummary(s.etcd)
+	s.mu.RUnlock()
+	writeJSON(w, data)
+}
+
 func writeJSON(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(data)
@@ -1244,6 +1797,27 @@ func cloneNetworkSummary(summary NetworkCheckSummary) NetworkCheckSummary {
 	summary.SourceErrors = append([]string(nil), summary.SourceErrors...)
 	if summary.Results == nil {
 		summary.Results = []NetworkCheckResult{}
+	}
+	return summary
+}
+
+func (s *server) setEtcdSummary(summary EtcdStatusSummary) {
+	if summary.Results == nil {
+		summary.Results = []EtcdStatusResult{}
+	}
+	s.mu.Lock()
+	s.etcd = summary
+	s.mu.Unlock()
+}
+
+func cloneEtcdSummary(summary EtcdStatusSummary) EtcdStatusSummary {
+	summary.Results = append([]EtcdStatusResult(nil), summary.Results...)
+	for i := range summary.Results {
+		summary.Results[i].Commands = append([]EtcdCommandResult(nil), summary.Results[i].Commands...)
+	}
+	summary.SourceErrors = append([]string(nil), summary.SourceErrors...)
+	if summary.Results == nil {
+		summary.Results = []EtcdStatusResult{}
 	}
 	return summary
 }

@@ -2,6 +2,30 @@
 
 All notable changes to `k8s-tool` are documented here.
 
+## v4.2 - RKE2 Etcd Status Checks
+
+- Added the Etcd Status module for RKE2 embedded etcd clusters.
+- Added server-side etcd node discovery through the `node-role.kubernetes.io/etcd` Node label.
+- Added server APIs:
+  - `GET /api/etcd/status`
+  - `POST /api/etcd/status`
+- Added agent API:
+  - `POST /api/etcd/status`
+- Added agent-side read-only etcd checks through host RKE2 `crictl exec`:
+  - `member list`
+  - `endpoint status`
+  - `endpoint health`
+  - `alarm list`
+  - `version`
+- Added React UI for Etcd Status summary, per-node status, alarms, command results, and raw output.
+- Added RKE2 hostPath mounts for `/var/lib/rancher/rke2` and `/run/k3s/containerd/containerd.sock`.
+- Added etcd/control-plane tolerations so the agent can run on tainted RKE2 server nodes.
+- Added environment variables:
+  - `ETCD_NODE_SELECTOR`
+  - `ETCD_CHECK_TIMEOUT_SECONDS`
+  - `ETCD_COMMAND_TIMEOUT_SECONDS`
+- Published image: `harbor.rancherlsp.com/ivan/k8s-tool:v4.2`
+
 ## v4.1 - Layered Network Diagnostics
 
 - Added layered network matrix diagnostics:

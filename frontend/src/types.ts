@@ -81,3 +81,42 @@ export interface NetworkView {
   sources: NetworkSourceSummary[];
   failures: NetworkCheckResult[];
 }
+
+export interface EtcdCommandResult {
+  name: string;
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMS: number;
+  error?: string;
+}
+
+export interface EtcdStatusResult {
+  nodeName: string;
+  nodeIP: string;
+  agentPod?: string;
+  agentPodIP?: string;
+  agentURL?: string;
+  status: string;
+  message?: string;
+  etcdContainerID?: string;
+  checkedAt: string;
+  durationMS: number;
+  alarmCount: number;
+  commands: EtcdCommandResult[];
+}
+
+export interface EtcdStatusSummary {
+  running: boolean;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+  etcdNodeCount: number;
+  checkedNodeCount: number;
+  healthyNodeCount: number;
+  unhealthyNodeCount: number;
+  alarmCount: number;
+  results: EtcdStatusResult[];
+  sourceErrors?: string[];
+}

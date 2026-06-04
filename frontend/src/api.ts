@@ -1,4 +1,4 @@
-import type { AgentsResponse, NetworkCheckSummary } from "./types";
+import type { AgentsResponse, EtcdStatusSummary, NetworkCheckSummary } from "./types";
 
 async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -31,4 +31,12 @@ export function fetchLayeredNetworkCheck(): Promise<NetworkCheckSummary> {
 
 export function runLayeredNetworkCheck(): Promise<NetworkCheckSummary> {
   return requestJSON<NetworkCheckSummary>("/api/layered-network-check", { method: "POST" });
+}
+
+export function fetchEtcdStatus(): Promise<EtcdStatusSummary> {
+  return requestJSON<EtcdStatusSummary>("/api/etcd/status");
+}
+
+export function runEtcdStatus(): Promise<EtcdStatusSummary> {
+  return requestJSON<EtcdStatusSummary>("/api/etcd/status", { method: "POST" });
 }

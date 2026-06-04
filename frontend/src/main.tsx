@@ -1,18 +1,21 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { fetchAgents, fetchLayeredNetworkCheck, refreshAgents, runLayeredNetworkCheck } from "./api";
+import { fetchAgents, fetchEtcdStatus, fetchLayeredNetworkCheck, refreshAgents, runEtcdStatus, runLayeredNetworkCheck } from "./api";
 import { AgentStatus } from "./components/AgentStatus";
+import { EtcdStatus } from "./components/EtcdStatus";
 import { NetworkDiagnostics } from "./components/NetworkDiagnostics";
 import "./styles.css";
-import type { AgentInfo, AgentsResponse, NetworkCheckSummary } from "./types";
+import type { AgentInfo, AgentsResponse, EtcdStatusSummary, NetworkCheckSummary } from "./types";
 
 function App() {
   const [agentsResponse, setAgentsResponse] = useState<AgentsResponse>({ agents: [] });
   const [network, setNetwork] = useState<NetworkCheckSummary>({ running: false, agentCount: 0, results: [] });
+  const [etcd, setEtcd] = useState<EtcdStatusSummary>({ running: false, etcdNodeCount: 0, checkedNodeCount: 0, healthyNodeCount: 0, unhealthyNodeCount: 0, alarmCount: 0, results: [] });
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [runningNetwork, setRunningNetwork] = useState(false);
+  const [runningEtcd, setRunningEtcd] = useState(false);
   const [error, setError] = useState("");
-  const generatedAt = useMemo(() => new Date().toISOString(), [agentsResponse, network]);
+  const generatedAt = useMemo(() => new Date().toISOString(), [agentsResponse, network, etcd]);
 
   async function loadAgents() {
     setLoadingAgents(true);
@@ -29,6 +32,14 @@ function App() {
   async function loadNetwork() {
     try {
       setNetwork(await fetchLayeredNetworkCheck());
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function loadEtcd() {
+    try {
+      setEtcd(await fetchEtcdStatus());
     } catch (err) {
       setError(String(err));
     }
@@ -58,9 +69,22 @@ function App() {
     }
   }
 
+  async function handleRunEtcdStatus() {
+    setRunningEtcd(true);
+    setError("");
+    try {
+      setEtcd(await runEtcdStatus());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setRunningEtcd(false);
+    }
+  }
+
   useEffect(() => {
     loadAgents();
     loadNetwork();
+    loadEtcd();
     const id = window.setInterval(loadAgents, 10_000);
     return () => window.clearInterval(id);
   }, []);
@@ -83,6 +107,7 @@ function App() {
       {(error || agentsResponse.lastError) && <div className="alert">{error || agentsResponse.lastError}</div>}
       <AgentStatus agents={agents} />
       <NetworkDiagnostics network={network} running={runningNetwork} onRun={handleRunNetworkCheck} />
+      <EtcdStatus etcd={etcd} running={runningEtcd} onRun={handleRunEtcdStatus} />
     </main>
   );
 }

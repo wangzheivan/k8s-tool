@@ -91,9 +91,22 @@ spec:
     spec:
       serviceAccountName: k8s-tool
       hostPID: true
+      tolerations:
+        - key: node-role.kubernetes.io/etcd
+          operator: Exists
+          effect: NoExecute
+        - key: node-role.kubernetes.io/etcd
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: k8s-tool-agent
-          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.1
+          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.2
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
@@ -125,6 +138,25 @@ spec:
                   fieldPath: status.hostIP
             - name: REFRESH_INTERVAL_SECONDS
               value: "10"
+            - name: ETCD_CHECK_TIMEOUT_SECONDS
+              value: "30"
+            - name: ETCD_COMMAND_TIMEOUT_SECONDS
+              value: "8"
+          volumeMounts:
+            - name: rke2-data
+              mountPath: /var/lib/rancher/rke2
+              readOnly: true
+            - name: rke2-containerd-sock
+              mountPath: /run/k3s/containerd/containerd.sock
+      volumes:
+        - name: rke2-data
+          hostPath:
+            path: /var/lib/rancher/rke2
+            type: DirectoryOrCreate
+        - name: rke2-containerd-sock
+          hostPath:
+            path: /run/k3s/containerd/containerd.sock
+            type: Socket
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -148,7 +180,7 @@ spec:
       serviceAccountName: k8s-tool
       containers:
         - name: k8s-tool-server
-          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.1
+          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.2
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -166,3 +198,9 @@ spec:
               value: app.kubernetes.io/name=k8s-tool,app.kubernetes.io/component=agent
             - name: AGENT_PORT
               value: "80"
+            - name: ETCD_NODE_SELECTOR
+              value: node-role.kubernetes.io/etcd
+            - name: ETCD_CHECK_TIMEOUT_SECONDS
+              value: "30"
+            - name: ETCD_COMMAND_TIMEOUT_SECONDS
+              value: "8"

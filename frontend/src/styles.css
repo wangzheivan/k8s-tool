@@ -134,6 +134,13 @@ th {
 .connect-error,
 .http-error,
 .invalid-json,
+.no-etcd-nodes-found,
+.missing-agent-on-etcd-node,
+.agent-connect-error,
+.missing-rke2-path,
+.etcd-container-not-found,
+.command-error,
+.timeout,
 .failed {
   color: #b42318;
 }
@@ -154,6 +161,17 @@ th {
 
 details {
   margin-top: 6px;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.command-block {
+  border-top: 1px solid #d9e2ec;
+  padding-top: 8px;
 }
 
 summary {
@@ -189,6 +207,10 @@ pre {
 
   td,
   th {
+    border-color: #34445a;
+  }
+
+  .command-block {
     border-color: #34445a;
   }
 

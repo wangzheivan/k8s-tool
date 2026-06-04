@@ -8,7 +8,7 @@
 默认镜像地址：
 
 ```text
-harbor.rancherlsp.com/ivan/k8s-tool:v4.1
+harbor.rancherlsp.com/ivan/k8s-tool:v4.2
 ```
 
 ## 功能
@@ -22,6 +22,7 @@ harbor.rancherlsp.com/ivan/k8s-tool:v4.1
 - `GET /api/node-info` 返回 Pod、Node、hostname、内存和采集时间。
 - `POST /api/network-check` 对指定目标 Pod IP 执行 `ping` 和 HTTP 检查。
 - `POST /api/layered-network-check` 执行指定层级的 Pod 或 Node 视角网络检查。
+- `POST /api/etcd/status` 在 RKE2 etcd 节点上通过宿主 `crictl exec` 执行只读 etcd 状态检查。
 
 `k8s-tool-server`：
 
@@ -33,7 +34,9 @@ harbor.rancherlsp.com/ivan/k8s-tool:v4.1
 - 手动触发 Network Diagnostics，执行四类矩阵：Pod-to-Pod、Node-to-Node、Node-to-Pod、Pod-to-Node。
 - Pod 视角在 agent Pod 网络命名空间内执行；Node 视角使用 `nsenter -t 1 -n` 在宿主网络命名空间内执行。
 - Network Diagnostics 使用分层 Tabs 展示 Summary、By Source 聚合和 Failures 失败明细，完整 N×N 结果保留在 API 中。
-- tcpdump 抓包模块不在 v4.1 中实现，计划作为后续 v4.2 功能。
+- Etcd Status 模块先通过 Node label `node-role.kubernetes.io/etcd` 识别 etcd 节点，再只调用对应节点上的 agent。
+- Etcd Status 展示 member list、endpoint status、endpoint health、alarm list、version 和 raw output。
+- tcpdump 抓包模块不在 v4.2 中实现，计划作为后续功能。
 
 ## 构建和推送
 
@@ -92,6 +95,7 @@ Agent:
 - `GET /api/node-info`
 - `POST /api/network-check`
 - `POST /api/layered-network-check`
+- `POST /api/etcd/status`
 
 Server:
 
@@ -102,6 +106,8 @@ Server:
 - `POST /api/network-check`
 - `GET /api/layered-network-check`
 - `POST /api/layered-network-check`
+- `GET /api/etcd/status`
+- `POST /api/etcd/status`
 
 ## 使用其他 Namespace
 
@@ -116,4 +122,4 @@ subjects:
 
 ## 安全说明
 
-agent 以特权模式运行并启用 `hostPID`，适合受控排障场景。server 使用 ServiceAccount 只读权限发现 agent Pod，不需要挂载 admin kubeconfig。Network Diagnostics 只在手动点击时执行，避免持续产生跨节点探测流量。
+agent 以特权模式运行并启用 `hostPID`，适合受控排障场景。v4.2 为 RKE2 etcd 检查额外挂载 `/var/lib/rancher/rke2` 和 `/run/k3s/containerd/containerd.sock`，仅用于在 etcd 节点执行只读 `etcdctl` 查询。server 使用 ServiceAccount 只读权限发现 agent Pod 和 Node，不需要挂载 admin kubeconfig。Network Diagnostics 和 Etcd Status 只在手动点击时执行，避免持续产生探测流量。
