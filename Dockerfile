@@ -5,6 +5,7 @@ WORKDIR /src
 
 COPY go.mod ./
 COPY cmd ./cmd
+COPY templates ./templates
 
 ARG TARGETOS=linux
 ARG TARGETARCH
@@ -48,6 +49,7 @@ RUN set -eux; \
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --from=server-builder /out/k8s-tool-server /usr/local/bin/k8s-tool-server
+COPY templates /usr/local/share/k8s-tool/templates
 
 RUN chmod +x /usr/local/bin/entrypoint.sh \
     && chmod +x /usr/local/bin/k8s-tool-server \

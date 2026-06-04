@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="{{.RefreshInterval}}">
+  <title>k8s-tool-server</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Arial, Helvetica, sans-serif; background: #f6f8fb; color: #17202a; }
+    body { margin: 0; padding: 24px; }
+    header, .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: 0; }
+    h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: 0; }
+    .meta { color: #52606d; font-size: 14px; }
+    button { border: 1px solid #8aa4c2; background: #ffffff; color: #17202a; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+    section { margin-top: 24px; }
+    table { width: 100%; border-collapse: collapse; background: #ffffff; border: 1px solid #d9e2ec; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #d9e2ec; font-size: 14px; vertical-align: top; }
+    th { background: #eef3f8; font-weight: 700; }
+    .status { font-weight: 700; }
+    .online { color: #16794c; }
+    .pod-not-running, .missing-pod-ip, .connect-error, .http-error, .invalid-json, .failed { color: #b42318; }
+    .ok { color: #16794c; }
+    .empty, .alert { border: 1px solid #d9e2ec; background: #ffffff; padding: 14px; border-radius: 8px; }
+    .alert { border-color: #f4b6b0; color: #9f1d14; margin-bottom: 14px; }
+    details { margin-top: 6px; }
+    summary { cursor: pointer; color: #3b668f; }
+    pre { white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }
+    @media (prefers-color-scheme: dark) {
+      :root { background: #121820; color: #eef2f6; }
+      table, .empty, .alert, button { background: #1c2633; border-color: #34445a; color: #eef2f6; }
+      th { background: #263446; }
+      td, th { border-color: #34445a; }
+      .meta { color: #b7c4d3; }
+      summary { color: #a7c7e8; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>k8s-tool-server</h1>
+      <div class="meta">Agents: {{len .Agents}} | Generated: {{.GeneratedAt}} | Refresh: {{.RefreshInterval}}s</div>
+    </div>
+    <button type="button" onclick="refreshNow()">Refresh Agents</button>
+  </header>
+  {{if .LastError}}<div class="alert">{{.LastError}}</div>{{end}}
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>Agent Status</h2>
+        <div class="meta">All discovered agent pods are shown, including failed or non-running pods.</div>
+      </div>
+    </div>
+    {{if .Agents}}
+    <table>
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Pod Name</th>
+          <th>Node</th>
+          <th>Pod IP</th>
+          <th>Node IP</th>
+          <th>Memory GiB</th>
+          <th>Last Refresh</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Agents}}
+        <tr>
+          <td class="status {{.Status}}">{{.Status}}</td>
+          <td>
+            {{.PodName}}
+            <details>
+              <summary>Details</summary>
+              <pre>namespace: {{.Namespace}}
+phase: {{.Phase}}
+agentURL: {{.AgentURL}}
+hostname: {{.Hostname}}
+collectedAt: {{.CollectedAt}}
+memoryTotalKB: {{.MemoryTotalKB}}
+memoryUsedKB: {{.MemoryUsedKB}}
+memoryFreeKB: {{.MemoryFreeKB}}
+error: {{.Error}}</pre>
+            </details>
+          </td>
+          <td>{{.NodeName}}</td>
+          <td>{{.PodIP}}</td>
+          <td>{{.NodeIP}}</td>
+          <td>{{.MemoryUsedGB}} / {{.MemoryTotalGB}}<br>free {{.MemoryFreeGB}}</td>
+          <td>{{.LastRefreshAt}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">No agent data available.</div>
+    {{end}}
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>Network Diagnostics</h2>
+        <div class="meta">Last run: {{.Network.CompletedAt}} | Results: {{len .Network.Results}}</div>
+      </div>
+      <button type="button" onclick="runNetworkCheck()">Run Network Check</button>
+    </div>
+    {{if .Network.Error}}<div class="alert">{{.Network.Error}}</div>{{end}}
+    {{if .Network.Results}}
+    <table>
+      <thead>
+        <tr>
+          <th>Source Pod</th>
+          <th>Target Pod</th>
+          <th>Target IP</th>
+          <th>Ping</th>
+          <th>HTTP</th>
+          <th>Checked</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Network.Results}}
+        <tr>
+          <td>{{.SourcePod}}</td>
+          <td>{{.TargetPod}}<br><span class="meta">{{.TargetNode}}</span></td>
+          <td>{{.TargetIP}}</td>
+          <td class="{{if .PingOK}}ok{{else}}failed{{end}}">{{if .Skipped}}skipped{{else}}{{if .PingOK}}ok{{else}}failed{{end}} {{.PingDurationMS}}ms{{end}}
+            <details><summary>Details</summary><pre>{{.PingError}}{{.SkipReason}}</pre></details>
+          </td>
+          <td class="{{if .HTTPOK}}ok{{else}}failed{{end}}">{{if .Skipped}}skipped{{else}}{{if .HTTPOK}}ok{{else}}failed{{end}} status={{.HTTPStatus}} {{.HTTPDurationMS}}ms{{end}}
+            <details><summary>Details</summary><pre>{{.HTTPError}}{{.SkipReason}}</pre></details>
+          </td>
+          <td>{{.CheckedAt}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">No network check has been run.</div>
+    {{end}}
+  </section>
+
+  <script>
+    function refreshNow() {
+      fetch('/api/refresh', { method: 'POST' }).then(function () { window.location.reload(); });
+    }
+    function runNetworkCheck() {
+      fetch('/api/network-check', { method: 'POST' }).then(function () { window.location.reload(); });
+    }
+  </script>
+</body>
+</html>
