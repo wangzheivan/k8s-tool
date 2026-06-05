@@ -8,7 +8,7 @@
 默认镜像地址：
 
 ```text
-harbor.rancherlsp.com/ivan/k8s-tool:v4.2.1
+harbor.rancherlsp.com/ivan/k8s-tool:v4.3
 ```
 
 ## 功能
@@ -23,6 +23,7 @@ harbor.rancherlsp.com/ivan/k8s-tool:v4.2.1
 - `POST /api/network-check` 对指定目标 Pod IP 执行 `ping` 和 HTTP 检查。
 - `POST /api/layered-network-check` 执行指定层级的 Pod 或 Node 视角网络检查。
 - `POST /api/etcd/status` 在 RKE2 etcd 节点上通过宿主 `crictl exec` 执行只读 etcd 状态检查。
+- `POST /api/certs/status` 扫描 RKE2 server/agent 证书并返回结构化 JSON。
 
 `k8s-tool-server`：
 
@@ -36,7 +37,8 @@ harbor.rancherlsp.com/ivan/k8s-tool:v4.2.1
 - Network Diagnostics 使用分层 Tabs 展示 Summary、By Source 聚合和 Failures 失败明细，完整 N×N 结果保留在 API 中。
 - Etcd Status 模块先通过 Node label `node-role.kubernetes.io/etcd` 识别 etcd 节点，再只调用对应节点上的 agent。
 - Etcd Status 展示 member list、endpoint status、endpoint health、alarm list、version 和 raw output。
-- tcpdump 抓包模块不在 v4.2.1 中实现，计划作为后续功能。
+- Certificate Status 模块聚合所有可运行 agent 的 RKE2 证书状态，展示过期、即将过期和解析失败证书。
+- tcpdump 抓包模块不在 v4.3 中实现，计划作为后续功能。
 
 ## 构建和推送
 
@@ -96,6 +98,7 @@ Agent:
 - `POST /api/network-check`
 - `POST /api/layered-network-check`
 - `POST /api/etcd/status`
+- `POST /api/certs/status`
 
 Server:
 
@@ -108,6 +111,13 @@ Server:
 - `POST /api/layered-network-check`
 - `GET /api/etcd/status`
 - `POST /api/etcd/status`
+- `GET /api/certs/status`
+- `POST /api/certs/status`
+
+## 环境变量
+
+- `CERT_EXPIRING_DAYS`：Certificate Status 即将过期阈值，默认 `30` 天。
+- `CERT_CHECK_TIMEOUT_SECONDS`：server 调用 agent 证书检查超时，默认 `20` 秒。
 
 ## 使用其他 Namespace
 
@@ -122,4 +132,4 @@ subjects:
 
 ## 安全说明
 
-agent 以特权模式运行并启用 `hostPID`，适合受控排障场景。v4.2.1 为 RKE2 etcd 检查额外挂载 `/var/lib/rancher/rke2` 和 `/run/k3s/containerd/containerd.sock`，仅用于在 etcd 节点执行只读 `etcdctl` 查询。server 使用 ServiceAccount 只读权限发现 agent Pod 和 Node，不需要挂载 admin kubeconfig。Network Diagnostics 和 Etcd Status 只在手动点击时执行，避免持续产生探测流量。
+agent 以特权模式运行并启用 `hostPID`，适合受控排障场景。v4.3 为 RKE2 etcd 检查和证书检查额外挂载 `/var/lib/rancher/rke2` 和 `/run/k3s/containerd/containerd.sock`，仅用于在节点上执行只读诊断。server 使用 ServiceAccount 只读权限发现 agent Pod 和 Node，不需要挂载 admin kubeconfig。Network Diagnostics、Etcd Status 和 Certificate Status 只在手动点击时执行，避免持续产生探测流量。

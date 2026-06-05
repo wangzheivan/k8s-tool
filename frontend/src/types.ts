@@ -120,3 +120,55 @@ export interface EtcdStatusSummary {
   results: EtcdStatusResult[];
   sourceErrors?: string[];
 }
+
+export interface CertificateInfo {
+  nodeName: string;
+  nodeIP: string;
+  category: string;
+  path: string;
+  subject: string;
+  issuer: string;
+  notBefore: string;
+  notAfter: string;
+  daysLeft: number;
+  expired: boolean;
+  expiringSoon: boolean;
+  parseError?: string;
+  status: string;
+}
+
+export interface CertNodeResult {
+  nodeName: string;
+  nodeIP: string;
+  role: string;
+  agentPod?: string;
+  agentPodIP?: string;
+  agentURL?: string;
+  status: string;
+  message?: string;
+  checkedAt: string;
+  durationMS: number;
+  serverCertCount: number;
+  agentCertCount: number;
+  expiredCount: number;
+  expiringSoonCount: number;
+  parseErrorCount: number;
+  certificates: CertificateInfo[];
+}
+
+export interface CertStatusSummary {
+  running: boolean;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+  nodeCount: number;
+  serverNodeCount: number;
+  workerNodeCount: number;
+  checkedNodeCount: number;
+  totalCertCount: number;
+  expiredCount: number;
+  expiringSoonCount: number;
+  parseErrorCount: number;
+  results: CertNodeResult[];
+  sourceErrors?: string[];
+}

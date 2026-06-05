@@ -138,6 +138,9 @@ th {
 .missing-agent-on-etcd-node,
 .agent-connect-error,
 .missing-rke2-path,
+.expired,
+.expiring-soon,
+.parse-error,
 .etcd-container-not-found,
 .command-error,
 .timeout,
@@ -151,6 +154,20 @@ th {
   background: #ffffff;
   padding: 14px;
   border-radius: 8px;
+}
+
+.compact {
+  margin-top: 8px;
+  padding: 8px;
+}
+
+.nested-table {
+  margin-top: 10px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
 }
 
 .alert {

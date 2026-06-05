@@ -225,6 +225,7 @@ type server struct {
 	agentPort        int
 	refreshInterval  time.Duration
 	etcdCheckTimeout time.Duration
+	certCheckTimeout time.Duration
 	kubeAPI          string
 	token            string
 	httpClient       *http.Client
@@ -235,6 +236,7 @@ type server struct {
 	network          NetworkCheckSummary
 	layeredNetwork   NetworkCheckSummary
 	etcd             EtcdStatusSummary
+	certs            CertStatusSummary
 }
 
 func main() {
@@ -260,6 +262,7 @@ func main() {
 	mux.HandleFunc("/api/network-check", srv.handleNetworkCheck)
 	mux.HandleFunc("/api/layered-network-check", srv.handleLayeredNetworkCheck)
 	mux.HandleFunc("/api/etcd/status", srv.handleEtcdStatus)
+	mux.HandleFunc("/api/certs/status", srv.handleCertStatus)
 	mux.HandleFunc("/", handleFrontend)
 
 	addr := ":80"
@@ -272,6 +275,7 @@ func newServer() (*server, error) {
 	refreshSeconds := envInt("REFRESH_INTERVAL_SECONDS", 10)
 	agentPort := envInt("AGENT_PORT", 80)
 	etcdCheckTimeout := envInt("ETCD_CHECK_TIMEOUT_SECONDS", 30)
+	certCheckTimeout := envInt("CERT_CHECK_TIMEOUT_SECONDS", 20)
 
 	tokenBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
 	if err != nil {
@@ -301,6 +305,7 @@ func newServer() (*server, error) {
 		agentPort:        agentPort,
 		refreshInterval:  time.Duration(refreshSeconds) * time.Second,
 		etcdCheckTimeout: time.Duration(etcdCheckTimeout) * time.Second,
+		certCheckTimeout: time.Duration(certCheckTimeout) * time.Second,
 		kubeAPI:          kubeAPI,
 		token:            strings.TrimSpace(string(tokenBytes)),
 		httpClient:       &http.Client{Timeout: 3 * time.Second},
@@ -309,6 +314,7 @@ func newServer() (*server, error) {
 		network:          NetworkCheckSummary{Results: []NetworkCheckResult{}},
 		layeredNetwork:   NetworkCheckSummary{Results: []NetworkCheckResult{}},
 		etcd:             EtcdStatusSummary{Results: []EtcdStatusResult{}},
+		certs:            CertStatusSummary{Results: []CertNodeResult{}},
 	}, nil
 }
 
@@ -1067,6 +1073,7 @@ func runAgent() {
 	mux.HandleFunc("/api/network-check", handleAgentNetworkCheck)
 	mux.HandleFunc("/api/layered-network-check", handleAgentLayeredNetworkCheck)
 	mux.HandleFunc("/api/etcd/status", handleAgentEtcdStatus)
+	mux.HandleFunc("/api/certs/status", handleAgentCertStatus)
 	addr := ":80"
 	log.Printf("k8s-tool-agent listening on %s pod=%s namespace=%s podIP=%s node=%s hostIP=%s", addr, os.Getenv("POD_NAME"), os.Getenv("POD_NAMESPACE"), os.Getenv("POD_IP"), os.Getenv("NODE_NAME"), os.Getenv("HOST_IP"))
 	log.Fatal(http.ListenAndServe(addr, mux))
@@ -1725,6 +1732,20 @@ func (s *server) handleEtcdStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *server) handleCertStatus(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.writeCertStatus(w)
+	case http.MethodPost:
+		ctx, cancel := context.WithTimeout(r.Context(), s.certCheckTimeout+15*time.Second)
+		defer cancel()
+		summary := s.runCertStatusCheck(ctx)
+		writeJSON(w, summary)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func handleFrontend(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		http.NotFound(w, r)
@@ -1787,6 +1808,13 @@ func (s *server) writeEtcdStatus(w http.ResponseWriter) {
 	writeJSON(w, data)
 }
 
+func (s *server) writeCertStatus(w http.ResponseWriter) {
+	s.mu.RLock()
+	data := cloneCertSummary(s.certs)
+	s.mu.RUnlock()
+	writeJSON(w, data)
+}
+
 func writeJSON(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(data)
@@ -1813,6 +1841,15 @@ func (s *server) setEtcdSummary(summary EtcdStatusSummary) {
 	}
 	s.mu.Lock()
 	s.etcd = summary
+	s.mu.Unlock()
+}
+
+func (s *server) setCertSummary(summary CertStatusSummary) {
+	if summary.Results == nil {
+		summary.Results = []CertNodeResult{}
+	}
+	s.mu.Lock()
+	s.certs = summary
 	s.mu.Unlock()
 }
 

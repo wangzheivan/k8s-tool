@@ -1,4 +1,4 @@
-import type { AgentsResponse, EtcdStatusSummary, NetworkCheckSummary } from "./types";
+import type { AgentsResponse, CertStatusSummary, EtcdStatusSummary, NetworkCheckSummary } from "./types";
 
 async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -39,4 +39,12 @@ export function fetchEtcdStatus(): Promise<EtcdStatusSummary> {
 
 export function runEtcdStatus(): Promise<EtcdStatusSummary> {
   return requestJSON<EtcdStatusSummary>("/api/etcd/status", { method: "POST" });
+}
+
+export function fetchCertStatus(): Promise<CertStatusSummary> {
+  return requestJSON<CertStatusSummary>("/api/certs/status");
+}
+
+export function runCertStatus(): Promise<CertStatusSummary> {
+  return requestJSON<CertStatusSummary>("/api/certs/status", { method: "POST" });
 }

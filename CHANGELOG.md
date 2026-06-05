@@ -2,6 +2,16 @@
 
 All notable changes to `k8s-tool` are documented here.
 
+## v4.3 - RKE2 Certificate Status
+
+- Added the RKE2 Certificate Status module for server and agent node certificate checks.
+- Added agent API `POST /api/certs/status`.
+- Added server APIs `GET /api/certs/status` and `POST /api/certs/status`.
+- Added React UI summary, node aggregation, filters, and certificate detail views.
+- Added certificate thresholds through `CERT_EXPIRING_DAYS` and `CERT_CHECK_TIMEOUT_SECONDS`.
+- Updated image references to `harbor.rancherlsp.com/ivan/k8s-tool:v4.3`.
+- tcpdump packet capture remains deferred to a later release.
+
 ## v4.2.1 - Etcd crictl Exec Network Namespace Fix
 
 - Fixed Etcd Status checks failing with `dial tcp 127.0.0.1:10010: connect: connection refused`.
