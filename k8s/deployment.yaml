@@ -20,7 +20,7 @@ spec:
       serviceAccountName: k8s-tool
       containers:
         - name: k8s-tool-server
-          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.2
+          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.2.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

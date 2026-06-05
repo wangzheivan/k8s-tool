@@ -1,0 +1,34 @@
+
+Server TLS Certificates:
+start_time   expire_time  days_left  subject                                            ssl_path_name
+------------ ------------ ---------- -------------------------------------------------- --------------------------------------------------
+2026-03-20   2027-03-20   288        CN = etcd-client                                   /var/lib/rancher/rke2/server/tls/etcd/client.crt
+2026-03-20   2027-03-20   288        CN = kube-controller-manager                       /var/lib/rancher/rke2/server/tls/kube-controller-manager/kube-controller-manager.crt
+2026-03-20   2027-03-20   288        CN = kube-scheduler                                /var/lib/rancher/rke2/server/tls/kube-scheduler/kube-scheduler.crt
+2026-03-20   2027-03-20   288        CN = rke2-cloud-controller-manager                 /var/lib/rancher/rke2/server/tls/client-rke2-cloud-controller.crt
+2026-03-20   2027-03-20   288        CN = system:auth-proxy                             /var/lib/rancher/rke2/server/tls/client-auth-proxy.crt
+2026-03-20   2027-03-20   288        CN = system:kube-controller-manager                /var/lib/rancher/rke2/server/tls/client-controller.crt
+2026-03-20   2027-03-20   288        CN = system:kube-scheduler                         /var/lib/rancher/rke2/server/tls/client-scheduler.crt
+2026-03-20   2027-03-20   288        O = system:masters, CN = system:admin              /var/lib/rancher/rke2/server/tls/client-admin.crt
+2026-03-20   2027-03-20   288        O = system:masters, CN = system:apiserver          /var/lib/rancher/rke2/server/tls/client-kube-apiserver.crt
+2026-03-20   2027-03-20   288        O = system:masters, CN = system:rke2-supervisor    /var/lib/rancher/rke2/server/tls/client-supervisor.crt
+2026-03-20   2027-06-02   362        CN = etcd-peer                                     /var/lib/rancher/rke2/server/tls/etcd/peer-server-client.crt
+2026-03-20   2027-06-02   362        CN = etcd-server                                   /var/lib/rancher/rke2/server/tls/etcd/server-client.crt
+2026-03-20   2027-06-02   362        CN = kube-apiserver                                /var/lib/rancher/rke2/server/tls/serving-kube-apiserver.crt
+2026-03-20   2036-03-17   3573       CN = etcd-peer-ca@1773987742                       /var/lib/rancher/rke2/server/tls/etcd/peer-ca.crt
+2026-03-20   2036-03-17   3573       CN = etcd-server-ca@1773987742                     /var/lib/rancher/rke2/server/tls/etcd/server-ca.crt
+2026-03-20   2036-03-17   3573       CN = rke2-client-ca@1773987742                     /var/lib/rancher/rke2/server/tls/client-ca.crt
+2026-03-20   2036-03-17   3573       CN = rke2-client-ca@1773987742                     /var/lib/rancher/rke2/server/tls/client-ca.nochain.crt
+2026-03-20   2036-03-17   3573       CN = rke2-request-header-ca@1773987742             /var/lib/rancher/rke2/server/tls/request-header-ca.crt
+2026-03-20   2036-03-17   3573       CN = rke2-server-ca@1773987742                     /var/lib/rancher/rke2/server/tls/server-ca.crt
+2026-03-20   2036-03-17   3573       CN = rke2-server-ca@1773987742                     /var/lib/rancher/rke2/server/tls/server-ca.nochain.crt
+
+Agent Certificates:
+start_time   expire_time  days_left  subject                                            ssl_path_name
+------------ ------------ ---------- -------------------------------------------------- --------------------------------------------------
+2026-03-20   2027-06-05   364        CN = node22                                        /var/lib/rancher/rke2/agent/serving-kubelet.crt
+2026-03-20   2027-06-05   364        CN = system:kube-proxy                             /var/lib/rancher/rke2/agent/client-kube-proxy.crt
+2026-03-20   2027-06-05   364        CN = system:rke2-controller                        /var/lib/rancher/rke2/agent/client-rke2-controller.crt
+2026-03-20   2027-06-05   364        O = system:nodes, CN = system:node:node22          /var/lib/rancher/rke2/agent/client-kubelet.crt
+2026-03-20   2036-03-17   3573       CN = rke2-client-ca@1773987742                     /var/lib/rancher/rke2/agent/client-ca.crt
+2026-03-20   2036-03-17   3573       CN = rke2-server-ca@1773987742                     /var/lib/rancher/rke2/agent/server-ca.crt

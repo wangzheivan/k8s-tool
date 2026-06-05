@@ -2,6 +2,14 @@
 
 All notable changes to `k8s-tool` are documented here.
 
+## v4.2.1 - Etcd crictl Exec Network Namespace Fix
+
+- Fixed Etcd Status checks failing with `dial tcp 127.0.0.1:10010: connect: connection refused`.
+- Changed agent-side RKE2 `crictl ps` and `crictl exec` calls to run through `nsenter -t 1 -n`.
+- Kept the agent DaemonSet off `hostNetwork` to avoid host port 80 conflicts.
+- Kept the v4.2 Etcd Status API and UI behavior unchanged.
+- Published image: `harbor.rancherlsp.com/ivan/k8s-tool:v4.2.1`
+
 ## v4.2 - RKE2 Etcd Status Checks
 
 - Added the Etcd Status module for RKE2 embedded etcd clusters.

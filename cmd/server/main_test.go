@@ -141,6 +141,26 @@ func TestCountEtcdAlarms(t *testing.T) {
 	}
 }
 
+func TestBuildHostNetworkCrictlCommand(t *testing.T) {
+	display, name, args := buildHostNetworkCrictlCommand("/var/lib/rancher/rke2/bin/crictl", "exec", "container-a", "etcdctl", "member", "list")
+
+	if name != "nsenter" {
+		t.Fatalf("command name = %q, want nsenter", name)
+	}
+	wantArgs := []string{"-t", "1", "-n", "/var/lib/rancher/rke2/bin/crictl", "exec", "container-a", "etcdctl", "member", "list"}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("args = %#v, want %#v", args, wantArgs)
+	}
+	for i := range wantArgs {
+		if args[i] != wantArgs[i] {
+			t.Fatalf("args[%d] = %q, want %q; all args=%#v", i, args[i], wantArgs[i], args)
+		}
+	}
+	if display != "nsenter -t 1 -n /var/lib/rancher/rke2/bin/crictl exec container-a etcdctl member list" {
+		t.Fatalf("display = %q", display)
+	}
+}
+
 func TestFinalizeEtcdSummary(t *testing.T) {
 	summary := EtcdStatusSummary{
 		EtcdNodeCount: 2,

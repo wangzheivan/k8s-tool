@@ -1319,13 +1319,14 @@ func runCrictlCommand(parent context.Context, crictlPath, crictlConfig, name str
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
+	displayCommand, commandName, commandArgs := buildHostNetworkCrictlCommand(crictlPath, args...)
 	start := time.Now()
 	result := EtcdCommandResult{
 		Name:     name,
-		Command:  crictlPath + " " + strings.Join(args, " "),
+		Command:  displayCommand,
 		ExitCode: 0,
 	}
-	cmd := exec.CommandContext(ctx, crictlPath, args...)
+	cmd := exec.CommandContext(ctx, commandName, commandArgs...)
 	cmd.Env = append(os.Environ(), "CRI_CONFIG_FILE="+crictlConfig)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -1348,6 +1349,11 @@ func runCrictlCommand(parent context.Context, crictlPath, crictlConfig, name str
 		result.Error = err.Error()
 	}
 	return result
+}
+
+func buildHostNetworkCrictlCommand(crictlPath string, args ...string) (string, string, []string) {
+	commandArgs := append([]string{"-t", "1", "-n", crictlPath}, args...)
+	return "nsenter " + strings.Join(commandArgs, " "), "nsenter", commandArgs
 }
 
 func statusForCommandError(ctx context.Context, command EtcdCommandResult, fallback string) string {
