@@ -47,6 +47,20 @@ harbor.rancherlsp.com/ivan/k8s-tool:v4.3
 ./scripts/build-image.sh
 ```
 
+低输出流水线：
+
+```bash
+./scripts/pipeline.sh
+```
+
+流水线会先验证、构建和 smoke test，成功后询问是否推送 GitHub 和 Harbor。非交互模式：
+
+```bash
+./scripts/pipeline.sh --push-github --push-harbor --message "<clear message>" --no-prompt
+```
+
+详细日志写入 `/tmp/k8s-tool-pipeline/logs/`。
+
 如果只验证前端：
 
 ```bash
