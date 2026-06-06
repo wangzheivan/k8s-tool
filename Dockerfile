@@ -60,11 +60,13 @@ RUN set -eux; \
 
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY assets/logs-collector/rancher2_logs_collector.sh /usr/local/share/k8s-tool/rancher2_logs_collector.sh
 COPY --from=server-builder /out/k8s-tool-server /usr/local/bin/k8s-tool-server
 COPY --from=frontend-builder /src/frontend/dist /usr/local/share/k8s-tool/frontend
 
 RUN chmod +x /usr/local/bin/entrypoint.sh \
     && chmod +x /usr/local/bin/k8s-tool-server \
+    && chmod +x /usr/local/share/k8s-tool/rancher2_logs_collector.sh \
     && mkdir -p /run/nginx /usr/share/nginx/html
 
 EXPOSE 80

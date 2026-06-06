@@ -33,7 +33,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: k8s-tool-agent
-          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.3
+          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.4
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
@@ -73,13 +73,33 @@ spec:
               value: "30"
             - name: CERT_CHECK_TIMEOUT_SECONDS
               value: "20"
+            - name: LOG_COLLECTION_TIMEOUT_SECONDS
+              value: "900"
+            - name: LOG_COLLECTION_MAX_PARALLEL
+              value: "3"
+            - name: LOG_COLLECTION_RETENTION_HOURS
+              value: "24"
           volumeMounts:
+            - name: host-var-log
+              mountPath: /var/log
+              readOnly: true
+            - name: rancher-config
+              mountPath: /etc/rancher
+              readOnly: true
             - name: rke2-data
               mountPath: /var/lib/rancher/rke2
               readOnly: true
             - name: rke2-containerd-sock
               mountPath: /run/k3s/containerd/containerd.sock
       volumes:
+        - name: host-var-log
+          hostPath:
+            path: /var/log
+            type: Directory
+        - name: rancher-config
+          hostPath:
+            path: /etc/rancher
+            type: Directory
         - name: rke2-data
           hostPath:
             path: /var/lib/rancher/rke2

@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-IMAGE_NAME="${IMAGE_NAME:-harbor.rancherlsp.com/ivan/k8s-tool:v4.3}"
+IMAGE_NAME="${IMAGE_NAME:-harbor.rancherlsp.com/ivan/k8s-tool:v4.4}"
 LOG_ROOT="${K8S_TOOL_PIPELINE_LOG_ROOT:-/tmp/k8s-tool-pipeline/logs}"
 RUN_ID="${K8S_TOOL_PIPELINE_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 LOG_DIR="${LOG_ROOT}/${RUN_ID}"

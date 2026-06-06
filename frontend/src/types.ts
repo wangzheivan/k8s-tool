@@ -172,3 +172,39 @@ export interface CertStatusSummary {
   results: CertNodeResult[];
   sourceErrors?: string[];
 }
+
+export interface LogCollectRequest {
+  days: number;
+}
+
+export interface LogNodeResult {
+  nodeName: string;
+  nodeIP: string;
+  agentPod?: string;
+  agentPodIP?: string;
+  agentURL?: string;
+  status: string;
+  message?: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMS: number;
+  artifactID?: string;
+  artifactName?: string;
+  sizeBytes: number;
+}
+
+export interface LogCollectionSummary {
+  collectionID?: string;
+  running: boolean;
+  startedAt?: string;
+  completedAt?: string;
+  days?: number;
+  nodeCount: number;
+  completedNodeCount: number;
+  failedNodeCount: number;
+  totalBytes: number;
+  downloadReady: boolean;
+  downloadURL?: string;
+  error?: string;
+  results: LogNodeResult[];
+}

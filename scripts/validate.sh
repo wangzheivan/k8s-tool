@@ -48,7 +48,7 @@ trap cleanup_frontend_artifacts EXIT
 run_stage "tool-go" bash -lc 'go version'
 run_stage "tool-npm" bash -lc 'npm --version'
 run_stage "tool-docker" bash -lc 'docker --version'
-run_stage "shell-syntax" bash -lc 'bash -n entrypoint.sh scripts/*.sh check-rke2-cert.sh'
+run_stage "shell-syntax" bash -lc 'bash -n entrypoint.sh scripts/*.sh check-rke2-cert.sh assets/logs-collector/rancher2_logs_collector.sh'
 run_stage "yaml-parse" python3 -c "import pathlib,yaml; [list(yaml.safe_load_all(p.read_text())) for p in sorted(pathlib.Path('k8s').glob('*.yaml'))]; print('yaml-ok')"
 run_stage "go-test" bash -lc 'go test ./...'
 run_stage "frontend-build" bash -lc 'cd frontend && npm ci && npm run build'

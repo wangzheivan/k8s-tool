@@ -2,6 +2,18 @@
 
 All notable changes to `k8s-tool` are documented here.
 
+## v4.4 - Logs Collector
+
+- Added the Logs Collector module for full-cluster log bundle collection and download.
+- Added server APIs `GET /api/logs/status`, `POST /api/logs/collect`, and `GET /api/logs/download/{collectionID}`.
+- Added agent APIs `POST /api/logs/collect` and `GET /api/logs/download/{artifactID}`.
+- Embedded the Rancher v2.x logs collector script as an image asset instead of downloading it at runtime.
+- Added React UI controls for required log time range selection, collection progress, per-node status, and cluster archive download.
+- Added read-only RBAC for pod logs and common workload resources used by collection.
+- Added log collection environment variables: `LOG_COLLECTION_TIMEOUT_SECONDS`, `LOG_COLLECTION_MAX_PARALLEL`, and `LOG_COLLECTION_RETENTION_HOURS`.
+- Added read-only agent hostPath mounts for `/var/log` and `/etc/rancher`.
+- Updated image references to `harbor.rancherlsp.com/ivan/k8s-tool:v4.4`.
+
 ## v4.3 - RKE2 Certificate Status
 
 - Added the RKE2 Certificate Status module for server and agent node certificate checks.

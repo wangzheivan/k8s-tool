@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-IMAGE_NAME="${IMAGE_NAME:-harbor.rancherlsp.com/ivan/k8s-tool:v4.3}"
+IMAGE_NAME="${IMAGE_NAME:-harbor.rancherlsp.com/ivan/k8s-tool:v4.4}"
 KUBECTL_VERSION="${KUBECTL_VERSION:-stable}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 PUSH="${PUSH:-false}"

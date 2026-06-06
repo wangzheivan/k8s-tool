@@ -219,24 +219,28 @@ type nodeAddress struct {
 }
 
 type server struct {
-	namespace        string
-	agentSelector    string
-	etcdNodeSelector string
-	agentPort        int
-	refreshInterval  time.Duration
-	etcdCheckTimeout time.Duration
-	certCheckTimeout time.Duration
-	kubeAPI          string
-	token            string
-	httpClient       *http.Client
-	kubeClient       *http.Client
-	mu               sync.RWMutex
-	agents           []AgentInfo
-	lastError        string
-	network          NetworkCheckSummary
-	layeredNetwork   NetworkCheckSummary
-	etcd             EtcdStatusSummary
-	certs            CertStatusSummary
+	namespace          string
+	agentSelector      string
+	etcdNodeSelector   string
+	agentPort          int
+	refreshInterval    time.Duration
+	etcdCheckTimeout   time.Duration
+	certCheckTimeout   time.Duration
+	logCollectTimeout  time.Duration
+	logCollectParallel int
+	logRetentionHours  time.Duration
+	kubeAPI            string
+	token              string
+	httpClient         *http.Client
+	kubeClient         *http.Client
+	mu                 sync.RWMutex
+	agents             []AgentInfo
+	lastError          string
+	network            NetworkCheckSummary
+	layeredNetwork     NetworkCheckSummary
+	etcd               EtcdStatusSummary
+	certs              CertStatusSummary
+	logs               LogCollectionSummary
 }
 
 func main() {
@@ -263,6 +267,9 @@ func main() {
 	mux.HandleFunc("/api/layered-network-check", srv.handleLayeredNetworkCheck)
 	mux.HandleFunc("/api/etcd/status", srv.handleEtcdStatus)
 	mux.HandleFunc("/api/certs/status", srv.handleCertStatus)
+	mux.HandleFunc("/api/logs/status", srv.handleLogsStatus)
+	mux.HandleFunc("/api/logs/collect", srv.handleLogsCollect)
+	mux.HandleFunc("/api/logs/download/", srv.handleLogsDownload)
 	mux.HandleFunc("/", handleFrontend)
 
 	addr := ":80"
@@ -276,6 +283,12 @@ func newServer() (*server, error) {
 	agentPort := envInt("AGENT_PORT", 80)
 	etcdCheckTimeout := envInt("ETCD_CHECK_TIMEOUT_SECONDS", 30)
 	certCheckTimeout := envInt("CERT_CHECK_TIMEOUT_SECONDS", 20)
+	logCollectTimeout := envInt("LOG_COLLECTION_TIMEOUT_SECONDS", 900)
+	logCollectParallel := envInt("LOG_COLLECTION_MAX_PARALLEL", 3)
+	logRetentionHours := envInt("LOG_COLLECTION_RETENTION_HOURS", 24)
+	if logCollectParallel < 1 {
+		logCollectParallel = 1
+	}
 
 	tokenBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
 	if err != nil {
@@ -299,22 +312,26 @@ func newServer() (*server, error) {
 	}
 
 	return &server{
-		namespace:        namespace,
-		agentSelector:    env("AGENT_SELECTOR", "app.kubernetes.io/name=k8s-tool,app.kubernetes.io/component=agent"),
-		etcdNodeSelector: env("ETCD_NODE_SELECTOR", "node-role.kubernetes.io/etcd"),
-		agentPort:        agentPort,
-		refreshInterval:  time.Duration(refreshSeconds) * time.Second,
-		etcdCheckTimeout: time.Duration(etcdCheckTimeout) * time.Second,
-		certCheckTimeout: time.Duration(certCheckTimeout) * time.Second,
-		kubeAPI:          kubeAPI,
-		token:            strings.TrimSpace(string(tokenBytes)),
-		httpClient:       &http.Client{Timeout: 3 * time.Second},
-		kubeClient:       kubeClient,
-		agents:           []AgentInfo{},
-		network:          NetworkCheckSummary{Results: []NetworkCheckResult{}},
-		layeredNetwork:   NetworkCheckSummary{Results: []NetworkCheckResult{}},
-		etcd:             EtcdStatusSummary{Results: []EtcdStatusResult{}},
-		certs:            CertStatusSummary{Results: []CertNodeResult{}},
+		namespace:          namespace,
+		agentSelector:      env("AGENT_SELECTOR", "app.kubernetes.io/name=k8s-tool,app.kubernetes.io/component=agent"),
+		etcdNodeSelector:   env("ETCD_NODE_SELECTOR", "node-role.kubernetes.io/etcd"),
+		agentPort:          agentPort,
+		refreshInterval:    time.Duration(refreshSeconds) * time.Second,
+		etcdCheckTimeout:   time.Duration(etcdCheckTimeout) * time.Second,
+		certCheckTimeout:   time.Duration(certCheckTimeout) * time.Second,
+		logCollectTimeout:  time.Duration(logCollectTimeout) * time.Second,
+		logCollectParallel: logCollectParallel,
+		logRetentionHours:  time.Duration(logRetentionHours) * time.Hour,
+		kubeAPI:            kubeAPI,
+		token:              strings.TrimSpace(string(tokenBytes)),
+		httpClient:         &http.Client{Timeout: 3 * time.Second},
+		kubeClient:         kubeClient,
+		agents:             []AgentInfo{},
+		network:            NetworkCheckSummary{Results: []NetworkCheckResult{}},
+		layeredNetwork:     NetworkCheckSummary{Results: []NetworkCheckResult{}},
+		etcd:               EtcdStatusSummary{Results: []EtcdStatusResult{}},
+		certs:              CertStatusSummary{Results: []CertNodeResult{}},
+		logs:               LogCollectionSummary{Results: []LogNodeResult{}},
 	}, nil
 }
 
@@ -1074,6 +1091,8 @@ func runAgent() {
 	mux.HandleFunc("/api/layered-network-check", handleAgentLayeredNetworkCheck)
 	mux.HandleFunc("/api/etcd/status", handleAgentEtcdStatus)
 	mux.HandleFunc("/api/certs/status", handleAgentCertStatus)
+	mux.HandleFunc("/api/logs/collect", handleAgentLogsCollect)
+	mux.HandleFunc("/api/logs/download/", handleAgentLogsDownload)
 	addr := ":80"
 	log.Printf("k8s-tool-agent listening on %s pod=%s namespace=%s podIP=%s node=%s hostIP=%s", addr, os.Getenv("POD_NAME"), os.Getenv("POD_NAMESPACE"), os.Getenv("POD_IP"), os.Getenv("NODE_NAME"), os.Getenv("HOST_IP"))
 	log.Fatal(http.ListenAndServe(addr, mux))

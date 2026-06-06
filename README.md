@@ -8,7 +8,7 @@
 默认镜像地址：
 
 ```text
-harbor.rancherlsp.com/ivan/k8s-tool:v4.3
+harbor.rancherlsp.com/ivan/k8s-tool:v4.4
 ```
 
 ## 功能
@@ -24,6 +24,8 @@ harbor.rancherlsp.com/ivan/k8s-tool:v4.3
 - `POST /api/layered-network-check` 执行指定层级的 Pod 或 Node 视角网络检查。
 - `POST /api/etcd/status` 在 RKE2 etcd 节点上通过宿主 `crictl exec` 执行只读 etcd 状态检查。
 - `POST /api/certs/status` 扫描 RKE2 server/agent 证书并返回结构化 JSON。
+- `POST /api/logs/collect` 执行本节点日志收集并生成节点级压缩包。
+- `GET /api/logs/download/{artifactID}` 下载本节点日志收集 artifact，供 server 聚合。
 
 `k8s-tool-server`：
 
@@ -38,7 +40,9 @@ harbor.rancherlsp.com/ivan/k8s-tool:v4.3
 - Etcd Status 模块先通过 Node label `node-role.kubernetes.io/etcd` 识别 etcd 节点，再只调用对应节点上的 agent。
 - Etcd Status 展示 member list、endpoint status、endpoint health、alarm list、version 和 raw output。
 - Certificate Status 模块聚合所有可运行 agent 的 RKE2 证书状态，展示过期、即将过期和解析失败证书。
-- tcpdump 抓包模块不在 v4.3 中实现，计划作为后续功能。
+- Logs Collector 模块触发全节点日志收集，完成后下载集群级 `.tar.gz` 压缩包。
+- Logs Collector 内置 Rancher logs collector 脚本，运行时不依赖公网下载；第一版只做收集和下载，不做日志解析或在线预览。
+- tcpdump 抓包模块不在 v4.4 中实现，计划作为后续功能。
 
 ## 构建和推送
 
@@ -113,6 +117,8 @@ Agent:
 - `POST /api/layered-network-check`
 - `POST /api/etcd/status`
 - `POST /api/certs/status`
+- `POST /api/logs/collect`
+- `GET /api/logs/download/{artifactID}`
 
 Server:
 
@@ -127,11 +133,17 @@ Server:
 - `POST /api/etcd/status`
 - `GET /api/certs/status`
 - `POST /api/certs/status`
+- `GET /api/logs/status`
+- `POST /api/logs/collect`
+- `GET /api/logs/download/{collectionID}`
 
 ## 环境变量
 
 - `CERT_EXPIRING_DAYS`：Certificate Status 即将过期阈值，默认 `30` 天。
 - `CERT_CHECK_TIMEOUT_SECONDS`：server 调用 agent 证书检查超时，默认 `20` 秒。
+- `LOG_COLLECTION_TIMEOUT_SECONDS`：日志收集单次任务超时，默认 `900` 秒。
+- `LOG_COLLECTION_MAX_PARALLEL`：server 并发调用 agent 收集日志的数量，默认 `3`。
+- `LOG_COLLECTION_RETENTION_HOURS`：本地临时日志包保留时间，默认 `24` 小时。
 
 ## 使用其他 Namespace
 
@@ -146,4 +158,4 @@ subjects:
 
 ## 安全说明
 
-agent 以特权模式运行并启用 `hostPID`，适合受控排障场景。v4.3 为 RKE2 etcd 检查和证书检查额外挂载 `/var/lib/rancher/rke2` 和 `/run/k3s/containerd/containerd.sock`，仅用于在节点上执行只读诊断。server 使用 ServiceAccount 只读权限发现 agent Pod 和 Node，不需要挂载 admin kubeconfig。Network Diagnostics、Etcd Status 和 Certificate Status 只在手动点击时执行，避免持续产生探测流量。
+agent 以特权模式运行并启用 `hostPID`，适合受控排障场景。v4.4 为 RKE2 etcd 检查、证书检查和日志收集额外挂载 `/var/lib/rancher/rke2`、`/run/k3s/containerd/containerd.sock`、`/var/log` 和 `/etc/rancher`，仅用于在节点上执行只读诊断。server 使用 ServiceAccount 只读权限发现 agent Pod、Node、Pod 日志和常见 Kubernetes 资源，不需要挂载 admin kubeconfig。Network Diagnostics、Etcd Status、Certificate Status 和 Logs Collector 只在手动点击时执行，避免持续产生探测流量。日志包可能包含敏感集群、节点、工作负载和系统信息，下载后请谨慎保存和分享。

@@ -104,9 +104,42 @@ button {
   cursor: pointer;
 }
 
+select {
+  border: 1px solid #8aa4c2;
+  background: #ffffff;
+  color: #17202a;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
 button:disabled {
   cursor: progress;
   opacity: 0.65;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+.controls label {
+  display: grid;
+  gap: 6px;
+  color: #52606d;
+  font-size: 13px;
+}
+
+.button-link {
+  display: inline-block;
+  border: 1px solid #1f4f82;
+  background: #1f4f82;
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 8px 12px;
+  text-decoration: none;
 }
 
 .tabs {
@@ -268,6 +301,7 @@ pre {
   .empty,
   .alert,
   button,
+  select,
   .sidebar,
   .stat {
     background: #1c2633;
@@ -289,7 +323,8 @@ pre {
   }
 
   .meta,
-  .stat .label {
+  .stat .label,
+  .controls label {
     color: #b7c4d3;
   }
 

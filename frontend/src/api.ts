@@ -1,4 +1,4 @@
-import type { AgentsResponse, CertStatusSummary, EtcdStatusSummary, NetworkCheckSummary } from "./types";
+import type { AgentsResponse, CertStatusSummary, EtcdStatusSummary, LogCollectionSummary, NetworkCheckSummary } from "./types";
 
 async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -47,4 +47,16 @@ export function fetchCertStatus(): Promise<CertStatusSummary> {
 
 export function runCertStatus(): Promise<CertStatusSummary> {
   return requestJSON<CertStatusSummary>("/api/certs/status", { method: "POST" });
+}
+
+export function fetchLogStatus(): Promise<LogCollectionSummary> {
+  return requestJSON<LogCollectionSummary>("/api/logs/status");
+}
+
+export function runLogCollection(days: number): Promise<LogCollectionSummary> {
+  return requestJSON<LogCollectionSummary>("/api/logs/collect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ days }),
+  });
 }

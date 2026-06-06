@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-IMAGE_NAME="${1:-${IMAGE_NAME:-harbor.rancherlsp.com/ivan/k8s-tool:v4.3}}"
+IMAGE_NAME="${1:-${IMAGE_NAME:-harbor.rancherlsp.com/ivan/k8s-tool:v4.4}}"
 LOG_ROOT="${K8S_TOOL_PIPELINE_LOG_ROOT:-/tmp/k8s-tool-pipeline/logs}"
 RUN_ID="${K8S_TOOL_PIPELINE_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 LOG_DIR="${LOG_ROOT}/${RUN_ID}"
@@ -63,12 +63,15 @@ run_stage "smoke-agent-start" docker run -d --name "${AGENT_NAME}" -e MODE=agent
 run_stage "smoke-agent-ready" wait_http "http://127.0.0.1:${AGENT_PORT}/api/node-info"
 run_stage "smoke-agent-node-info" curl -fsS "http://127.0.0.1:${AGENT_PORT}/api/node-info"
 run_stage "smoke-agent-certs" curl -fsS -X POST "http://127.0.0.1:${AGENT_PORT}/api/certs/status"
+run_stage "smoke-agent-logs" curl -fsS -X POST -H "Content-Type: application/json" -d '{"days":1}' "http://127.0.0.1:${AGENT_PORT}/api/logs/collect"
 
 run_stage "smoke-server-start" docker run -d --name "${SERVER_NAME}" -e MODE=server -p "127.0.0.1:${SERVER_PORT}:80" "${IMAGE_NAME}"
 run_stage "smoke-server-ready" wait_http "http://127.0.0.1:${SERVER_PORT}/"
 run_stage "smoke-server-root" curl -fsS "http://127.0.0.1:${SERVER_PORT}/"
 run_stage "smoke-server-agents" curl -fsS "http://127.0.0.1:${SERVER_PORT}/api/agents"
 run_stage "smoke-server-certs" curl -fsS "http://127.0.0.1:${SERVER_PORT}/api/certs/status"
+run_stage "smoke-server-logs-status" curl -fsS "http://127.0.0.1:${SERVER_PORT}/api/logs/status"
+run_stage "smoke-server-logs-bad-download" bash -lc "status=\$(curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:${SERVER_PORT}/api/logs/download/bad-id || true); test \"\${status}\" = 404"
 
 cleanup
 trap - EXIT

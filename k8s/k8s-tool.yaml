@@ -15,9 +15,64 @@ rules:
   - apiGroups: [""]
     resources:
       - endpoints
+      - events
+      - configmaps
+      - namespaces
       - nodes
+      - persistentvolumes
+      - persistentvolumeclaims
       - pods
+      - pods/log
       - services
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apiregistration.k8s.io"]
+    resources:
+      - apiservices
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - daemonsets
+      - deployments
+      - replicasets
+      - statefulsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - cronjobs
+      - jobs
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - clusterroles
+      - clusterrolebindings
+      - roles
+      - rolebindings
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources:
+      - mutatingwebhookconfigurations
+      - validatingwebhookconfigurations
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources:
+      - customresourcedefinitions
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources:
+      - volumeattachments
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["helm.cattle.io"]
+    resources:
+      - helmcharts
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -106,7 +161,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: k8s-tool-agent
-          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.3
+          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.4
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
@@ -146,13 +201,33 @@ spec:
               value: "30"
             - name: CERT_CHECK_TIMEOUT_SECONDS
               value: "20"
+            - name: LOG_COLLECTION_TIMEOUT_SECONDS
+              value: "900"
+            - name: LOG_COLLECTION_MAX_PARALLEL
+              value: "3"
+            - name: LOG_COLLECTION_RETENTION_HOURS
+              value: "24"
           volumeMounts:
+            - name: host-var-log
+              mountPath: /var/log
+              readOnly: true
+            - name: rancher-config
+              mountPath: /etc/rancher
+              readOnly: true
             - name: rke2-data
               mountPath: /var/lib/rancher/rke2
               readOnly: true
             - name: rke2-containerd-sock
               mountPath: /run/k3s/containerd/containerd.sock
       volumes:
+        - name: host-var-log
+          hostPath:
+            path: /var/log
+            type: Directory
+        - name: rancher-config
+          hostPath:
+            path: /etc/rancher
+            type: Directory
         - name: rke2-data
           hostPath:
             path: /var/lib/rancher/rke2
@@ -184,7 +259,7 @@ spec:
       serviceAccountName: k8s-tool
       containers:
         - name: k8s-tool-server
-          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.3
+          image: harbor.rancherlsp.com/ivan/k8s-tool:v4.4
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -212,3 +287,9 @@ spec:
               value: "30"
             - name: CERT_CHECK_TIMEOUT_SECONDS
               value: "20"
+            - name: LOG_COLLECTION_TIMEOUT_SECONDS
+              value: "900"
+            - name: LOG_COLLECTION_MAX_PARALLEL
+              value: "3"
+            - name: LOG_COLLECTION_RETENTION_HOURS
+              value: "24"
